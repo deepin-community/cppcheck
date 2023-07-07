@@ -1,0 +1,3 @@
+Test-Command: build/bin/testrunner
+Depends: @builddeps@
+Restrictions: build-needed, rw-build-tree, allow-stderr

@@ -1,4 +1,68 @@
 #!/usr/bin/make -f
 
+# export DH_VERBOSE=1
+
+# for DEB_VERSION_UPSTREAM
+include /usr/share/dpkg/pkg-info.mk
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+bindnow
+
+export DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+export QT_SELECT := qt5
+
+# See http://wiki.debian.org/Hardening#Notes_for_packages_using_CMake
+CFLAGS   := $(CFLAGS) $(CPPFLAGS)
+CXXFLAGS := $(CXXFLAGS) $(CPPFLAGS)
+
+# Disable QtCharts on ia64, powerpc, and sparc64.
+QTCHART_OFF_ARCHITECTURES := ia64 powerpc sparc64
+ifneq (,$(findstring $(DEB_HOST_ARCH), $(QTCHART_OFF_ARCHITECTURES)))
+  QTCHART_FLAG := OFF
+else
+  QTCHART_FLAG := ON
+endif
+
 %:
-	dh $@
+	dh $@ --buildsystem=cmake --builddirectory=build
+
+override_dh_auto_configure:
+	[ -e backup ] || (mkdir backup; cp Makefile gui/*.ts backup)
+	QTDIR= dh_auto_configure -- \
+	  -DCMAKE_BUILD_TYPE=Release \
+	  -DUSE_BUNDLED_TINYXML2=OFF \
+	  -DUSE_MATCHCOMPILER=ON \
+	  -DHAVE_RULES=ON \
+	  -DBUILD_TESTS=ON \
+	  -DBUILD_GUI=ON \
+	  -DWITH_QCHART=$(QTCHART_FLAG) \
+	  -DFILESDIR=/usr/lib/$(DEB_HOST_MULTIARCH)/cppcheck
+
+override_dh_auto_build:
+	dh_auto_build
+	xsltproc -''-nonet -''-param man.charmap.use.subset "0" --output build/cppcheck.1 \
+	  /usr/share/sgml/docbook/stylesheet/xsl/nwalsh/manpages/docbook.xsl \
+	  man/cppcheck.1.xml
+	sed -e "s/1.70/$(DEB_VERSION_UPSTREAM)/" debian/cppcheck-htmlreport.1.in \
+	  >build/cppcheck-htmlreport.1
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	build/bin/testrunner
+endif
+
+override_dh_auto_install:
+	dh_auto_install
+	install htmlreport/cppcheck-htmlreport $(CURDIR)/debian/tmp/usr/bin
+	install -d $(CURDIR)/debian/tmp/usr/share/man/man1
+	install build/cppcheck.1 $(CURDIR)/debian/tmp/usr/share/man/man1
+	install build/cppcheck-htmlreport.1 $(CURDIR)/debian/tmp/usr/share/man/man1
+	dh_install --sourcedir=debian/tmp
+
+# workaround for bug #949296: "dwz: debian/cppcheck/usr/bin/cppcheck: Unknown DWARF DW_OP_255"
+override_dh_dwz:
+	dh_dwz -Xcppcheck
+
+override_dh_clean:
+	dh_clean
+	[ ! -e backup ] || (cp backup/Makefile .; cp backup/*.ts gui; rm backup/*; rmdir backup)

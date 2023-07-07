@@ -1,0 +1,83 @@
+Description: Disable tests not working on 32bit platforms.
+Author: Joachim Reichel <reichel@debian.org>
+Bug: https://trac.cppcheck.net/ticket/10282, https://trac.cppcheck.net/ticket/10417
+
+Index: cppcheck/test/test64bit.cpp
+===================================================================
+--- cppcheck.orig/test/test64bit.cpp
++++ cppcheck/test/test64bit.cpp
+@@ -79,6 +79,7 @@ private:
+     }
+ 
+     void functionpar() {
++#if __SIZEOF_POINTER__ >= 8
+         check("int foo(int *p)\n"
+               "{\n"
+               "    int a = p;\n"
+@@ -106,6 +107,7 @@ private:
+               "    *p = 0;\n"
+               "}");
+         ASSERT_EQUALS("[test.cpp:3]: (portability) Assigning an integer to a pointer is not portable.\n", errout.str());
++#endif
+ 
+         check("int f(const char *p) {\n" // #4659
+               "    return 6 + p[2] * 256;\n"
+@@ -160,6 +162,7 @@ private:
+     }
+ 
+     void structmember() {
++#if __SIZEOF_POINTER__ >= 8
+         check("struct Foo { int *p; };\n"
+               "void f(struct Foo *foo) {\n"
+               "    int i = foo->p;\n"
+@@ -175,6 +178,7 @@ private:
+               "    s.e = S::E::e1;\n"
+               "}\n");
+         ASSERT_EQUALS("", errout.str());
++#endif
+     }
+ 
+     void ptrcompare() {
+@@ -199,11 +203,13 @@ private:
+               "}");
+         ASSERT_EQUALS("", errout.str());
+ 
++#if __SIZEOF_POINTER__ >= 8
+         check("void foo(int *p) {\n"
+               "    int x = 10;\n"
+               "    int *a = x * x;\n"
+               "}");
+         ASSERT_EQUALS("[test.cpp:3]: (portability) Assigning an integer to a pointer is not portable.\n", errout.str());
++#endif
+ 
+         check("void foo(int *start, int *end) {\n"
+               "    int len;\n"
+@@ -213,10 +219,12 @@ private:
+     }
+ 
+     void returnIssues() {
++#if __SIZEOF_POINTER__ >= 8
+         check("void* foo(int i) {\n"
+               "    return i;\n"
+               "}");
+         ASSERT_EQUALS("[test.cpp:2]: (portability) Returning an integer in a function with pointer return type is not portable.\n", errout.str());
++#endif
+ 
+         check("void* foo(int* i) {\n"
+               "    return i;\n"
+@@ -240,6 +248,7 @@ private:
+               "}");
+         ASSERT_EQUALS("", errout.str());
+ 
++#if __SIZEOF_POINTER__ >= 8
+         check("int foo(char* c) {\n"
+               "    return c;\n"
+               "}");
+@@ -249,6 +258,7 @@ private:
+               "    return 1+c;\n"
+               "}");
+         ASSERT_EQUALS("[test.cpp:2]: (portability) Returning an address value in a function with integer return type is not portable.\n", errout.str());
++#endif
+ 
+         check("std::string foo(char* c) {\n"
+               "    return c;\n"

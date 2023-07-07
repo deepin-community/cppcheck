@@ -1,0 +1,4 @@
+fix-default-settings
+install-translations-in-filesdir-lang
+disable-some-tests-on-32bit-platforms
+disable-some-tests-about-char-signedness
