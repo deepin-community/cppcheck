@@ -23,20 +23,20 @@
 #include "resultsview.h"
 #include "settings.h"
 
-#include <list>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include <QDebug>
+#include <QFile>
 #include <QFileInfo>
+#include <QIODevice>
 #include <QSettings>
+#include <QTextStream>
+#include <QVariant>
 
 ThreadHandler::ThreadHandler(QObject *parent) :
-    QObject(parent),
-    mScanDuration(0),
-    mRunningThreadCount(0),
-    mAnalyseWholeProgram(false)
-
+    QObject(parent)
 {
     setThreadCount(1);
 }
@@ -148,7 +148,10 @@ void ThreadHandler::setThreadCount(const int count)
 void ThreadHandler::removeThreads()
 {
     for (CheckThread* thread : mThreads) {
-        thread->terminate();
+        if (thread->isRunning()) {
+            thread->terminate();
+            thread->wait();
+        }
         disconnect(thread, &CheckThread::done,
                    this, &ThreadHandler::threadDone);
         disconnect(thread, &CheckThread::fileChecked,
@@ -191,7 +194,7 @@ void ThreadHandler::stop()
     }
 }
 
-void ThreadHandler::initialize(ResultsView *view)
+void ThreadHandler::initialize(const ResultsView *view)
 {
     connect(&mResults, &ThreadResult::progress,
             view, &ResultsView::progress);

@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import pytest
+import glob
 
 from testutils import create_gui_project_file, cppcheck
 
@@ -57,14 +58,19 @@ def test_absolute_path():
     assert stderr == '[%s:5]: (error) Division by zero.\n' % filename
 
 def test_addon_local_path():
-    ret, stdout, stderr = cppcheck_local(['--addon=misra', '--template=cppcheck1', '.'])
+    ret, stdout, stderr = cppcheck_local(['--addon=misra', '--enable=style', '--template=cppcheck1', '.'])
     assert ret == 0, stdout
     assert stderr == ('[main.c:5]: (error) Division by zero.\n'
                       '[main.c:1]: (style) misra violation (use --rule-texts=<file> to get proper output)\n')
 
+def test_addon_local_path_not_enable():
+    ret, stdout, stderr = cppcheck_local(['--addon=misra', '--template=cppcheck1', '.'])
+    assert ret == 0, stdout
+    assert stderr == '[main.c:5]: (error) Division by zero.\n'
+
 def test_addon_absolute_path():
     prjpath = getAbsoluteProjectPath()
-    ret, stdout, stderr = cppcheck(['--addon=misra', '--template=cppcheck1', prjpath])
+    ret, stdout, stderr = cppcheck(['--addon=misra', '--enable=style', '--template=cppcheck1', prjpath])
     filename = os.path.join(prjpath, 'main.c')
     assert ret == 0, stdout
     assert stderr == ('[%s:5]: (error) Division by zero.\n'
@@ -72,7 +78,7 @@ def test_addon_absolute_path():
 
 def test_addon_relative_path():
     prjpath = getRelativeProjectPath()
-    ret, stdout, stderr = cppcheck(['--platform=native', '--addon=misra', '--template=cppcheck1', prjpath])
+    ret, stdout, stderr = cppcheck(['--addon=misra', '--enable=style', '--template=cppcheck1', prjpath])
     filename = os.path.join(prjpath, 'main.c')
     assert ret == 0, stdout
     assert stdout == ('Checking %s ...\n'
@@ -83,7 +89,7 @@ def test_addon_relative_path():
 def test_addon_with_gui_project():
     project_file = 'helloworld/test.cppcheck'
     create_gui_project_file(project_file, paths=['.'], addon='misra')
-    ret, stdout, stderr = cppcheck(['--platform=native', '--template=cppcheck1', '--project=' + project_file])
+    ret, stdout, stderr = cppcheck(['--template=cppcheck1', '--enable=style', '--project=' + project_file])
     filename = os.path.join('helloworld', 'main.c')
     assert ret == 0, stdout
     assert stdout == 'Checking %s ...\n' % filename
@@ -178,7 +184,11 @@ def test_exclude():
     prjpath = getRelativeProjectPath()
     ret, stdout, _ = cppcheck(['-i' + prjpath, '--platform=win64', '--project=' + os.path.join(prjpath, 'helloworld.cppcheck')])
     assert ret == 1
-    assert stdout == 'cppcheck: error: no C or C++ source files found.\n'
+    lines = stdout.splitlines()
+    assert lines == [
+        'cppcheck: error: no C or C++ source files found.',
+        'cppcheck: all paths were ignored'
+    ]
 
 
 def test_build_dir_dump_output():
@@ -187,21 +197,42 @@ def test_build_dir_dump_output():
 
         cppcheck(args.split())
         cppcheck(args.split())
-        with open(f'{tempdir}/main.a1.dump', 'rt') as f:
-            dump = f.read()
-            assert '</dump>' in dump, 'invalid dump data: ...' + dump[-100:]
+
+        filename = f'{tempdir}/main.a1.*.dump'
+        filelist = glob.glob(filename)
+        assert(len(filelist) == 0)
+
+
+def test_checkers_report():
+    with tempfile.TemporaryDirectory() as tempdir:
+        filename = os.path.join(tempdir, '1.txt')
+        args = f'--checkers-report={filename} helloworld'
+
+        cppcheck(args.split())
+
+        with open(filename, 'rt') as f:
+            data = f.read()
+            assert 'No   CheckAutoVariables::assignFunctionArg' in data
+            assert 'Yes  CheckAutoVariables::autoVariables' in data
+
+        args = '--enable=style ' + args
+        cppcheck(args.split())
+        with open(filename, 'rt') as f:
+            data = f.read()
+            # checker has been activated by --enable=style
+            assert 'Yes  CheckAutoVariables::assignFunctionArg' in data
+
 
 def __test_missing_include_system(use_j):
-    args = '--enable=missingInclude --suppress=zerodiv helloworld'
+    args = ['--enable=missingInclude', '--suppress=zerodiv', '--template={file}:{line}:{column}: {severity}:{inconclusive:inconclusive:} {message} [{id}]', 'helloworld']
     if use_j:
-        args = '-j2 ' + args
+        args.insert(0, '-j2')
 
-    _, _, stderr = cppcheck(args.split())
-    assert stderr == 'nofile:0:0: information: Cppcheck cannot find all the include files (use --check-config for details) [missingIncludeSystem]\n\n'
+    _, _, stderr = cppcheck(args)
+    assert stderr.replace('\\', '/') == 'helloworld/main.c:1:0: information: Include file: <stdio.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n'
 
 def test_missing_include_system():
     __test_missing_include_system(False)
 
-@pytest.mark.xfail
 def test_missing_include_system_j(): #11283
     __test_missing_include_system(True)

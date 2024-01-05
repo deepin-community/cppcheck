@@ -18,15 +18,17 @@
 
 
 #include "errortypes.h"
+#include "helpers.h"
 #include "platform.h"
 #include "settings.h"
 #include "fixture.h"
 #include "token.h"
 #include "tokenize.h"
+#include "utils.h"
 
 #include <sstream> // IWYU pragma: keep
 #include <string>
-
+#include <vector>
 
 class TestSimplifyUsing : public TestFixture {
 public:
@@ -34,19 +36,9 @@ public:
 
 
 private:
-    Settings settings0;
-    Settings settings1;
-    Settings settings2;
+    const Settings settings0 = settingsBuilder().severity(Severity::style).build();
 
     void run() override {
-        settings0.severity.enable(Severity::style);
-        settings2.severity.enable(Severity::style);
-
-        // If there are unused templates, keep those
-        settings0.checkUnusedTemplates = true;
-        settings1.checkUnusedTemplates = true;
-        settings2.checkUnusedTemplates = true;
-
         TEST_CASE(simplifyUsing1);
         TEST_CASE(simplifyUsing2);
         TEST_CASE(simplifyUsing3);
@@ -73,6 +65,9 @@ private:
         TEST_CASE(simplifyUsing24);
         TEST_CASE(simplifyUsing25);
         TEST_CASE(simplifyUsing26); // #11090
+        TEST_CASE(simplifyUsing27);
+        TEST_CASE(simplifyUsing28);
+        TEST_CASE(simplifyUsing29);
 
         TEST_CASE(simplifyUsing8970);
         TEST_CASE(simplifyUsing8971);
@@ -92,19 +87,24 @@ private:
         TEST_CASE(simplifyUsing10172);
         TEST_CASE(simplifyUsing10173);
         TEST_CASE(simplifyUsing10335);
+        TEST_CASE(simplifyUsing10720);
 
         TEST_CASE(scopeInfo1);
         TEST_CASE(scopeInfo2);
     }
 
 #define tok(...) tok_(__FILE__, __LINE__, __VA_ARGS__)
-    std::string tok_(const char* file, int line, const char code[], Settings::PlatformType type = Settings::Native, bool debugwarnings = true) {
+    std::string tok_(const char* file, int line, const char code[], Platform::Type type = Platform::Type::Native, bool debugwarnings = true, bool preprocess = false) {
         errout.str("");
 
-        settings0.certainty.enable(Certainty::inconclusive);
-        settings0.debugwarnings = debugwarnings;
-        settings0.platform(type);
-        Tokenizer tokenizer(&settings0, this);
+        const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive).debugwarnings(debugwarnings).platform(type).build();
+
+        Tokenizer tokenizer(&settings, this);
+
+        if (preprocess) {
+            std::vector<std::string> files(1, "test.cpp");
+            PreprocessorHelper::preprocess(code, files, tokenizer);
+        }
 
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
@@ -406,7 +406,7 @@ private:
                             "    FP_M(val);"
                             "};";
 
-        TODO_ASSERT_THROW(tok(code, Settings::Native, false), InternalError); // TODO: Do not throw AST validation exception
+        TODO_ASSERT_THROW(tok(code, Platform::Type::Native, false), InternalError); // TODO: Do not throw AST validation exception
         //ASSERT_EQUALS("", errout.str());
     }
 
@@ -646,6 +646,42 @@ private:
         ASSERT_EQUALS(expected, tok(code));
     }
 
+    void simplifyUsing27() { // #11670
+        const char code[] = "namespace N {\n"
+                            "    template <class T>\n"
+                            "    struct S {\n"
+                            "        using iterator = T*;\n"
+                            "        iterator begin();\n"
+                            "    };\n"
+                            "}\n"
+                            "using I = N::S<int>;\n"
+                            "void f() {\n"
+                            "    I::iterator iter;\n"
+                            "}\n";
+        const char expected[] = "namespace N { struct S<int> ; } "
+                                "void f ( ) { int * iter ; } "
+                                "struct N :: S<int> { int * begin ( ) ; } ;";
+        ASSERT_EQUALS(expected, tok(code));
+    }
+
+    void simplifyUsing28() { // #11795
+        const char code[] = "void f() {\n"
+                            "    using T = int;\n"
+                            "    T* p{ new T };\n"
+                            "}\n";
+        const char expected[] = "void f ( ) { int * p { new int } ; }";
+        ASSERT_EQUALS(expected, tok(code, Platform::Type::Native, /*debugwarnings*/ true));
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyUsing29() { // #11981
+        const char code[] = "using T = int*;\n"
+                            "void f(T = T()) {}\n";
+        const char expected[] = "void f ( int * = ( int * ) 0 ) { }";
+        ASSERT_EQUALS(expected, tok(code, Platform::Type::Native, /*debugwarnings*/ true));
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void simplifyUsing8970() {
         const char code[] = "using V = std::vector<int>;\n"
                             "struct A {\n"
@@ -696,11 +732,11 @@ private:
 
         const char exp[] = "int i ;";
 
-        ASSERT_EQUALS(exp, tok(code, Settings::Unix32));
-        ASSERT_EQUALS(exp, tok(code, Settings::Unix64));
-        ASSERT_EQUALS(exp, tok(code, Settings::Win32A));
-        ASSERT_EQUALS(exp, tok(code, Settings::Win32W));
-        ASSERT_EQUALS(exp, tok(code, Settings::Win64));
+        ASSERT_EQUALS(exp, tok(code, Platform::Type::Unix32));
+        ASSERT_EQUALS(exp, tok(code, Platform::Type::Unix64));
+        ASSERT_EQUALS(exp, tok(code, Platform::Type::Win32A));
+        ASSERT_EQUALS(exp, tok(code, Platform::Type::Win32W));
+        ASSERT_EQUALS(exp, tok(code, Platform::Type::Win64));
     }
 
     void simplifyUsing9042() {
@@ -720,7 +756,7 @@ private:
                            "} ; "
                            "template < class T > class s { } ;";
 
-        ASSERT_EQUALS(exp, tok(code, Settings::Win64));
+        ASSERT_EQUALS(exp, tok(code, Platform::Type::Win64));
     }
 
     void simplifyUsing9191() {
@@ -1344,6 +1380,17 @@ private:
                             "enum E : uint8_t { E0 };";
         const char exp[]  = "enum E : unsigned char { E0 } ;";
         ASSERT_EQUALS(exp, tok(code));
+    }
+
+    void simplifyUsing10720() {
+        const char code[] = "template <typename... Ts>\n"
+                            "struct S {};\n"
+                            "#define STAMP(thiz, prev) using thiz = S<prev, prev, prev, prev, prev, prev, prev, prev, prev, prev>;\n"
+                            "STAMP(A, int);\n"
+                            "STAMP(B, A);\n"
+                            "STAMP(C, B);\n";
+        tok(code, Platform::Type::Native, /*debugwarnings*/ true, /*preprocess*/ true);
+        ASSERT(startsWith(errout.str(), "[test.cpp:6]: (debug) Failed to parse 'using C = S < S < S < int"));
     }
 
     void scopeInfo1() {

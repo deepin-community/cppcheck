@@ -47,17 +47,18 @@ public:
     /** This constructor is used when registering the CheckClass */
     CheckStl() : Check(myName()) {}
 
+private:
     /** This constructor is used when running checks. */
     CheckStl(const Tokenizer* tokenizer, const Settings* settings, ErrorLogger* errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
     /** run checks, the token list is not simplified */
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        if (!tokenizer->isCPP()) {
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        if (!tokenizer.isCPP()) {
             return;
         }
 
-        CheckStl checkStl(tokenizer, settings, errorLogger);
+        CheckStl checkStl(&tokenizer, tokenizer.getSettings(), errorLogger);
         checkStl.erase();
         checkStl.if_find();
         checkStl.checkFindInsert();
@@ -184,7 +185,6 @@ public:
 
     void checkMutexes();
 
-private:
     bool isContainerSize(const Token *containerToken, const Token *expr) const;
     bool isContainerSizeGE(const Token * containerToken, const Token *expr) const;
 
@@ -192,9 +192,9 @@ private:
     void string_c_strThrowError(const Token* tok);
     void string_c_strError(const Token* tok);
     void string_c_strReturn(const Token* tok);
-    void string_c_strParam(const Token* tok, nonneg int number);
-    void string_c_strConstructor(const Token* tok);
-    void string_c_strAssignment(const Token* tok);
+    void string_c_strParam(const Token* tok, nonneg int number, const std::string& argtype = "std::string");
+    void string_c_strConstructor(const Token* tok, const std::string& argtype = "std::string");
+    void string_c_strAssignment(const Token* tok, const std::string& argtype = "std::string");
     void string_c_strConcat(const Token* tok);
     void string_c_strStream(const Token* tok);
 

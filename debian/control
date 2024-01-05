@@ -9,14 +9,12 @@ Build-Depends:
   dh-sequence-python3,
   docbook-xml,
   docbook-xsl,
-  libpcre3-dev,
-  libqt5charts5-dev,
   libtinyxml2-dev,
   python3-all,
-  qt5-qmake,
-  qtbase5-dev,
-  qtbase5-dev-tools,
-  qttools5-dev,
+  qt6-base-dev,
+  qt6-base-dev-tools,
+  qt6-charts-dev,
+  qt6-tools-dev,
   xsltproc
 Standards-Version: 4.6.2
 Rules-Requires-Root: no

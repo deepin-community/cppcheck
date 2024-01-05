@@ -21,11 +21,15 @@
 
 #include <QFileSystemModel>
 #include <QMainWindow>
+#include <QObject>
 #include <QRegularExpression>
 #include <QString>
+#include <QStringList>
 
 class QListWidgetItem;
 class QTextStream;
+class QPoint;
+class QWidget;
 namespace Ui {
     class MainWindow;
 }
@@ -43,7 +47,7 @@ public slots:
     void loadFile();
     void loadFromClipboard();
     void filter(const QString& filter);
-    void showResult(QListWidgetItem *item);
+    void showResult(const QListWidgetItem *item);
     void refreshResults();
     void fileTreeFilter(const QString &str);
     void findInFilesClicked();

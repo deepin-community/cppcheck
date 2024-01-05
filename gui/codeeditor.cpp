@@ -20,8 +20,24 @@
 
 #include "codeeditorstyle.h"
 
+#include <QChar>
+#include <QColor>
+#include <QFont>
+#include <QFontMetrics>
+#include <QKeySequence>
+#include <QLatin1Char>
+#include <QList>
 #include <QPainter>
+#include <QPaintEvent>
+#include <QRect>
+#include <QRectF>
+#include <QRegularExpressionMatchIterator>
 #include <QShortcut>
+#include <QTextBlock>
+#include <QTextCursor>
+#include <QTextEdit>
+#include <QTextFormat>
+#include <QtCore>
 
 class QTextDocument;
 
@@ -36,6 +52,7 @@ Highlighter::Highlighter(QTextDocument *parent,
     mKeywordFormat.setForeground(mWidgetStyle->keywordColor);
     mKeywordFormat.setFontWeight(mWidgetStyle->keywordWeight);
     QStringList keywordPatterns;
+    // TODO: use Keywords::getX()
     keywordPatterns << "alignas"
                     << "alignof"
                     << "asm"
@@ -135,7 +152,7 @@ Highlighter::Highlighter(QTextDocument *parent,
     mQuotationFormat.setForeground(mWidgetStyle->quoteColor);
     mQuotationFormat.setFontWeight(mWidgetStyle->quoteWeight);
     // We use lazy `*?` instead greed `*` quantifier to find the real end of the c-string.
-    // We use negative lookbehind assertion `(?<!\)` to ignore `\"` sequience in the c-string.
+    // We use negative lookbehind assertion `(?<!\)` to ignore `\"` sequence in the c-string.
     rule.pattern = QRegularExpression("\".*?(?<!\\\\)\"");
     rule.format = mQuotationFormat;
     rule.ruleRole = RuleRole::Quote;
@@ -273,8 +290,8 @@ CodeEditor::CodeEditor(QWidget *parent) :
     QShortcut *copyText = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_C),this);
     QShortcut *allText = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_A),this);
 #else
-    QShortcut *copyText = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_C),this);
-    QShortcut *allText = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_A),this);
+    const QShortcut *copyText = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_C),this);
+    const QShortcut *allText = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_A),this);
 #endif
 
     connect(this, SIGNAL(blockCountChanged(int)), this, SLOT(updateLineNumberAreaWidth(int)));
@@ -403,7 +420,7 @@ void CodeEditor::highlightErrorLine()
     setExtraSelections(extraSelections);
 }
 
-void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent *event)
+void CodeEditor::lineNumberAreaPaintEvent(const QPaintEvent *event)
 {
     QPainter painter(mLineNumberArea);
     painter.fillRect(event->rect(), mWidgetStyle->lineNumBGColor);

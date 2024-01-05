@@ -2,7 +2,7 @@
 // Test library configuration for opencv2.cfg
 //
 // Usage:
-// $ cppcheck --check-library --library=opencv2 --enable=style --error-exitcode=1 --suppress=missingIncludeSystem --inline-suppr test/cfg/opencv2.cpp
+// $ cppcheck --check-library --library=opencv2 --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr test/cfg/opencv2.cpp
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
@@ -11,7 +11,7 @@
 #include <opencv2/opencv.hpp>
 
 
-void validCode(char* argStr)
+void validCode(const char* argStr)
 {
     cv::Mat image;
     image = cv::imread(argStr, cv::IMREAD_COLOR);
@@ -39,7 +39,7 @@ void ignoredReturnValue()
 
 void memleak()
 {
-    char * pBuf = (char *)cv::fastMalloc(1000); // cppcheck-suppress cstyleCast
+    const char * pBuf = (char *)cv::fastMalloc(1000); // cppcheck-suppress cstyleCast
     std::cout << pBuf;
     // cppcheck-suppress memleak
 }

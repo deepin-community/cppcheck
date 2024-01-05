@@ -32,7 +32,9 @@ class ValuePtr;
 struct Analyzer {
     struct Action {
 
-        Action() : mFlag(0) {}
+        Action() = default;
+        Action(const Action&) = default;
+        Action& operator=(const Action& rhs) = default;
 
         template<class T,
                  REQUIRES("T must be convertible to unsigned int", std::is_convertible<T, unsigned int> ),
@@ -125,7 +127,7 @@ struct Analyzer {
         }
 
     private:
-        unsigned int mFlag;
+        unsigned int mFlag{};
     };
 
     enum class Terminate { None, Bail, Escape, Modified, Inconclusive, Conditional };
@@ -181,7 +183,13 @@ struct Analyzer {
     virtual void assume(const Token* tok, bool state, unsigned int flags = 0) = 0;
     /// Return analyzer for expression at token
     virtual ValuePtr<Analyzer> reanalyze(Token* tok, const std::string& msg = emptyString) const = 0;
-    virtual ~Analyzer() {}
+    virtual bool invalid() const {
+        return false;
+    }
+    virtual ~Analyzer() = default;
+    Analyzer(const Analyzer&) = default;
+protected:
+    Analyzer() = default;
 };
 
 #endif

@@ -2,7 +2,7 @@
 // Test library configuration for qt.cfg
 //
 // Usage:
-// $ cppcheck --check-library --library=qt --enable=style --error-exitcode=1 --suppress=missingIncludeSystem --inline-suppr test/cfg/qt.cpp
+// $ cppcheck --check-library --library=qt --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr test/cfg/qt.cpp
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
@@ -321,6 +321,13 @@ void duplicateExpression_QString_Compare(QString style) //#8723
     {}
 }
 
+void QVector_uninit()
+{
+    int i;
+    // cppcheck-suppress [uninitvar, unreadVariable]
+    QVector<int> v(i);
+}
+
 void QStack1(QStack<int> intStackArg)
 {
     for (int i = 0; i <= intStackArg.size(); ++i) {
@@ -420,8 +427,9 @@ void MacroTest3()
     QVERIFY2(2 >= 0, message.constData());
 }
 
-void validCode(int * pIntPtr, QString & qstrArg)
+void validCode(int * pIntPtr, QString & qstrArg, double d)
 {
+    Q_UNUSED(d)
     if (QFile::exists("test")) {}
 
     if (pIntPtr != Q_NULLPTR) {
@@ -440,6 +448,7 @@ void validCode(int * pIntPtr, QString & qstrArg)
 
     printf(QT_TR_NOOP("Hi"));
 
+    // cppcheck-suppress checkLibraryFunction
     Q_DECLARE_LOGGING_CATEGORY(logging_category_test);
     QT_FORWARD_DECLARE_CLASS(forwardDeclaredClass);
     QT_FORWARD_DECLARE_STRUCT(forwardDeclaredStruct);
@@ -494,4 +503,100 @@ namespace {
         }
         void slot() {};
     };
+
+    // findFunction11
+    class Fred : public QObject {
+        Q_OBJECT
+    private slots:
+        void foo();
+    };
+    void Fred::foo() {}
+
+    // bitfields14
+    class X {
+    signals:
+    };
+
+    // simplifyQtSignalsSlots1
+    class Counter1 : public QObject {
+        Q_OBJECT
+    public:
+        Counter1() {
+            m_value = 0;
+        }
+        int value() const {
+            return m_value;
+        }
+    public slots:
+        void setValue(int value);
+    signals:
+        void valueChanged(int newValue);
+    private:
+        int m_value;
+    };
+    void Counter1::setValue(int value) {
+        if (value != m_value) {
+            m_value = value;
+            emit valueChanged(value);
+        }
+    }
+
+    class Counter2 : public QObject {
+        Q_OBJECT
+    public:
+        Counter2() {
+            m_value = 0;
+        }
+        int value() const {
+            return m_value;
+        }
+    public Q_SLOTS:
+        void setValue(int value);
+    Q_SIGNALS:
+        void valueChanged(int newValue);
+    private:
+        int m_value;
+    };
+    void Counter2::setValue(int value) {
+        if (value != m_value) {
+            m_value = value;
+            emit valueChanged(value);
+        }
+    }
+
+    class MyObject1 : public QObject {
+        MyObject1() {}
+        ~MyObject1() {}
+    public slots:
+    signals:
+        void test() {}
+    };
+
+    class MyObject2 : public QObject {
+        Q_OBJECT
+    public slots:
+    };
+
+    // simplifyQtSignalsSlots2
+    namespace Foo { class Bar; }
+    class Foo::Bar : public QObject { private slots: };
+
+    // Q_PROPERTY with templates inducing a ',' should not produce a preprocessorErrorDirective
+    class AssocProperty : public QObject {
+    public:
+        Q_PROPERTY(QHash<QString, int> hash READ hash WRITE setHash)
+    };
+}
+
+struct SEstimateSize {
+    inline const QString& get() const { return m; }
+    QString m;
+};
+
+class QString;
+
+void dontCrashEstimateSize(const SEstimateSize& s) {
+    // cppcheck-suppress redundantCopyLocalConst
+    QString q = s.get();
+    if (!q.isNull()) {}
 }

@@ -21,6 +21,7 @@
 #include "tokenize.h"
 #include "checkinternal.h"
 #include "fixture.h"
+#include "settings.h"
 
 #include <sstream>
 
@@ -58,8 +59,7 @@ private:
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
         // Check..
-        CheckInternal checkInternal;
-        checkInternal.runChecks(&tokenizer, &settings, this);
+        runChecks<CheckInternal>(tokenizer, this);
     }
 
     void simplePatternInTokenMatch() {

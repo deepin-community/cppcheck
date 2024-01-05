@@ -28,11 +28,23 @@
 
 #include "ui_settings.h"
 
+#include <QCheckBox>
+#include <QDialogButtonBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QGroupBox>
+#include <QLabel>
+#include <QLineEdit>
 #include <QList>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QPushButton>
+#include <QRadioButton>
 #include <QSettings>
+#include <QSize>
 #include <QThread>
+#include <QVariant>
 #include <QWidget>
 
 SettingsDialog::SettingsDialog(ApplicationList *list,
@@ -80,7 +92,7 @@ SettingsDialog::SettingsDialog(ApplicationList *list,
     mCurrentStyle = new CodeEditorStyle(CodeEditorStyle::loadSettings(&settings));
     manageStyleControls();
 
-    connect(mUI->mEditPythonPath, SIGNAL(textEdited(const QString&)),
+    connect(mUI->mEditPythonPath, SIGNAL(textEdited(QString)),
             this, SLOT(validateEditPythonPath()));
 
     connect(mUI->mButtons, &QDialogButtonBox::accepted, this, &SettingsDialog::ok);
@@ -147,10 +159,7 @@ Qt::CheckState SettingsDialog::boolToCheckState(bool yes)
 
 bool SettingsDialog::checkStateToBool(Qt::CheckState state)
 {
-    if (state == Qt::Checked) {
-        return true;
-    }
-    return false;
+    return state == Qt::Checked;
 }
 
 
@@ -205,7 +214,7 @@ void SettingsDialog::saveSettingValues() const
     CodeEditorStyle::saveSettings(&settings, *mCurrentStyle);
 }
 
-void SettingsDialog::saveCheckboxValue(QSettings *settings, QCheckBox *box,
+void SettingsDialog::saveCheckboxValue(QSettings *settings, const QCheckBox *box,
                                        const QString &name)
 {
     settings->setValue(name, checkStateToBool(box->checkState()));

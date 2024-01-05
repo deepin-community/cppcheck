@@ -22,9 +22,10 @@
 #include "cppchecklibrarydata.h"
 
 #include <QDialog>
+#include <QObject>
+#include <QString>
 
 class QListWidgetItem;
-class QObject;
 class QWidget;
 namespace Ui {
     class LibraryDialog;
@@ -55,7 +56,7 @@ private:
     Ui::LibraryDialog *mUi;
     CppcheckLibraryData mData;
     QString mFileName;
-    bool mIgnoreChanges;
+    bool mIgnoreChanges{};
 
     static QString getArgText(const CppcheckLibraryData::Function::Arg &arg);
     CppcheckLibraryData::Function *currentFunction();

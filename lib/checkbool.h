@@ -24,13 +24,13 @@
 
 #include "check.h"
 #include "config.h"
+#include "tokenize.h"
 
 #include <string>
 
 class ErrorLogger;
 class Settings;
 class Token;
-class Tokenizer;
 
 /// @addtogroup Checks
 /// @{
@@ -43,13 +43,14 @@ public:
     /** @brief This constructor is used when registering the CheckClass */
     CheckBool() : Check(myName()) {}
 
+private:
     /** @brief This constructor is used when running checks. */
     CheckBool(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
     /** @brief Run checks against the normal token list */
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        CheckBool checkBool(tokenizer, settings, errorLogger);
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        CheckBool checkBool(&tokenizer, tokenizer.getSettings(), errorLogger);
 
         // Checks
         checkBool.checkComparisonOfBoolExpressionWithInt();
@@ -95,7 +96,6 @@ public:
     /** @brief %Check if a function returning bool returns an integer other than 0 or 1 */
     void returnValueOfFunctionReturningBool();
 
-private:
     // Error messages..
     void comparisonOfFuncReturningBoolError(const Token *tok, const std::string &expression);
     void comparisonOfTwoFuncsReturningBoolError(const Token *tok, const std::string &expression1, const std::string &expression2);

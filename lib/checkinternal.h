@@ -26,12 +26,12 @@
 #include "config.h"
 #include "errortypes.h"
 #include "settings.h"
+#include "tokenize.h"
 
 #include <string>
 
 class ErrorLogger;
 class Token;
-class Tokenizer;
 
 /// @addtogroup Checks
 /// @{
@@ -43,15 +43,16 @@ public:
     /** This constructor is used when registering the CheckClass */
     CheckInternal() : Check(myName()) {}
 
+private:
     /** This constructor is used when running checks. */
     CheckInternal(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        if (!settings->checks.isEnabled(Checks::internalCheck))
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        if (!tokenizer.getSettings()->checks.isEnabled(Checks::internalCheck))
             return;
 
-        CheckInternal checkInternal(tokenizer, settings, errorLogger);
+        CheckInternal checkInternal(&tokenizer, tokenizer.getSettings(), errorLogger);
 
         checkInternal.checkTokenMatchPatterns();
         checkInternal.checkTokenSimpleMatchPatterns();
@@ -82,7 +83,7 @@ public:
 
     /** @brief %Check if there is a redundant check for none-nullness of parameter before Match functions, such as (tok && Token::Match(tok, "foo")) */
     void checkRedundantTokCheck();
-private:
+
     void multiComparePatternError(const Token *tok, const std::string &pattern, const std::string &funcname);
     void simplePatternError(const Token *tok, const std::string &pattern, const std::string &funcname);
     void complexPatternError(const Token *tok, const std::string &pattern, const std::string &funcname);

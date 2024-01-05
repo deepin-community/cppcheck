@@ -18,6 +18,8 @@
 
 #include "settings.h"
 #include "fixture.h"
+#include "platform.h"
+#include "standards.h"
 #include "token.h"
 #include "tokenlist.h"
 
@@ -29,7 +31,7 @@ public:
     TestTokenList() : TestFixture("TestTokenList") {}
 
 private:
-    Settings settings;
+    const Settings settings;
 
     void run() override {
         TEST_CASE(testaddtoken1);
@@ -39,22 +41,23 @@ private:
     }
 
     // inspired by #5895
-    void testaddtoken1() {
+    void testaddtoken1() const {
         const std::string code = "0x89504e470d0a1a0a";
         TokenList tokenlist(&settings);
         tokenlist.addtoken(code, 1, 1, false);
         ASSERT_EQUALS("0x89504e470d0a1a0a", tokenlist.front()->str());
     }
 
-    void testaddtoken2() {
+    void testaddtoken2() const {
         const std::string code = "0xF0000000";
-        settings.int_bit = 32;
-        TokenList tokenlist(&settings);
+        Settings settings1;
+        settings1.platform.int_bit = 32;
+        TokenList tokenlist(&settings1);
         tokenlist.addtoken(code, 1, 1, false);
         ASSERT_EQUALS("0xF0000000", tokenlist.front()->str());
     }
 
-    void inc() const {
+    void inc() {
         const char code[] = "a++1;1++b;";
 
         errout.str("");
@@ -67,7 +70,7 @@ private:
         ASSERT(Token::simpleMatch(tokenlist.front(), "a + + 1 ; 1 + + b ;"));
     }
 
-    void isKeyword() {
+    void isKeyword() const {
 
         const char code[] = "for a int delete true";
 
@@ -106,6 +109,56 @@ private:
             ASSERT_EQUALS(false, tokenlist.front()->tokAt(4)->isKeyword());
             ASSERT_EQUALS(true, tokenlist.front()->tokAt(4)->isLiteral());
             ASSERT_EQUALS(false, tokenlist.front()->tokAt(4)->isControlFlowKeyword());
+        }
+
+        {
+            const char code2[] = "_Generic"; // C11 keyword
+            TokenList tokenlist(nullptr); // no settings use latest standard
+            std::istringstream istr(code2);
+            tokenlist.createTokens(istr, "a.cpp");
+            ASSERT_EQUALS(false, tokenlist.front()->isKeyword());
+        }
+
+        {
+            const char code2[] = "_Generic"; // C11 keyword
+            TokenList tokenlist(nullptr); // no settings use latest standard
+            std::istringstream istr(code2);
+            tokenlist.createTokens(istr, "a.c");
+            ASSERT_EQUALS(true, tokenlist.front()->isKeyword());
+        }
+
+        {
+            const char code2[] = "_Generic"; // C11 keyword
+            const Settings s = settingsBuilder().c(Standards::C89).build();
+            TokenList tokenlist(&s);
+            std::istringstream istr(code2);
+            tokenlist.createTokens(istr, "a.c");
+            ASSERT_EQUALS(false, tokenlist.front()->isKeyword());
+        }
+
+        {
+            const char code2[] = "co_return"; // C++20 keyword
+            TokenList tokenlist(nullptr); // no settings use latest standard
+            std::istringstream istr(code2);
+            tokenlist.createTokens(istr, "a.cpp");
+            ASSERT_EQUALS(true, tokenlist.front()->isKeyword());
+        }
+
+        {
+            const char code2[] = "co_return"; // C++20 keyword
+            TokenList tokenlist(nullptr); // no settings use latest standard
+            std::istringstream istr(code2);
+            tokenlist.createTokens(istr, "a.c");
+            ASSERT_EQUALS(false, tokenlist.front()->isKeyword());
+        }
+
+        {
+            const char code2[] = "noexcept"; // C++11 keyword
+            const Settings s = settingsBuilder().cpp(Standards::CPP03).build();
+            TokenList tokenlist(&s);
+            std::istringstream istr(code2);
+            tokenlist.createTokens(istr, "a.cpp");
+            ASSERT_EQUALS(false, tokenlist.front()->isKeyword());
         }
     }
 };

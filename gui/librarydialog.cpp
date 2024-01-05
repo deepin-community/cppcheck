@@ -22,38 +22,49 @@
 #include "libraryaddfunctiondialog.h"
 #include "libraryeditargdialog.h"
 #include "path.h"
+#include "utils.h"
 
 #include "ui_librarydialog.h"
 
-#include <string>
-
+#include <QCheckBox>
+#include <QComboBox>
 #include <QFile>
 #include <QFileDialog>
+#include <QFlags>
+#include <QIODevice>
+#include <QLineEdit>
+#include <QList>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QTextStream>
+#include <Qt>
 
 class QWidget;
 
 // TODO: get/compare functions from header
 
-class FunctionListItem : public QListWidgetItem {
-public:
-    FunctionListItem(QListWidget *view,
-                     CppcheckLibraryData::Function *function,
-                     bool selected)
-        : QListWidgetItem(view), function(function) {
-        setText(function->name);
-        setFlags(flags() | Qt::ItemIsEditable);
-        setSelected(selected);
-    }
-    CppcheckLibraryData::Function *function;
-};
+namespace {
+    class FunctionListItem : public QListWidgetItem {
+    public:
+        FunctionListItem(QListWidget *view,
+                         CppcheckLibraryData::Function *function,
+                         bool selected)
+            : QListWidgetItem(view), function(function) {
+            setText(function->name);
+            setFlags(flags() | Qt::ItemIsEditable);
+            setSelected(selected);
+        }
+        CppcheckLibraryData::Function *function;
+    };
+}
 
 LibraryDialog::LibraryDialog(QWidget *parent) :
     QDialog(parent),
-    mUi(new Ui::LibraryDialog),
-    mIgnoreChanges(false)
+    mUi(new Ui::LibraryDialog)
 {
     mUi->setupUi(this);
     mUi->buttonSave->setEnabled(false);
@@ -264,7 +275,7 @@ void LibraryDialog::sortFunctions(bool sort)
         mUi->functions->sortItems();
     } else {
         mIgnoreChanges = true;
-        CppcheckLibraryData::Function *selfunction = currentFunction();
+        const CppcheckLibraryData::Function* selfunction = currentFunction();
         mUi->functions->clear();
         for (CppcheckLibraryData::Function &function : mData.functions) {
             mUi->functions->addItem(new FunctionListItem(mUi->functions,
@@ -335,11 +346,11 @@ QString LibraryDialog::getArgText(const CppcheckLibraryData::Function::Arg &arg)
     if (arg.nr != CppcheckLibraryData::Function::Arg::ANY)
         s += QString::number(arg.nr);
 
-    s += "\n    not bool: " + QString(arg.notbool ? "true" : "false");
-    s += "\n    not null: " + QString(arg.notnull ? "true" : "false");
-    s += "\n    not uninit: " + QString(arg.notuninit ? "true" : "false");
-    s += "\n    format string: " + QString(arg.formatstr ? "true" : "false");
-    s += "\n    strz: " + QString(arg.strz ? "true" : "false");
+    s += "\n    not bool: " + QString(bool_to_string(arg.notbool));
+    s += "\n    not null: " +  QString(bool_to_string(arg.notnull));
+    s += "\n    not uninit: " +  QString(bool_to_string(arg.notuninit));
+    s += "\n    format string: " +  QString(bool_to_string(arg.formatstr));
+    s += "\n    strz: " +  QString(bool_to_string(arg.strz));
     s += "\n    valid: " + QString(arg.valid.isEmpty() ? "any" : arg.valid);
     for (const CppcheckLibraryData::Function::Arg::MinSize &minsize : arg.minsizes) {
         s += "\n    minsize: " + minsize.type + " " + minsize.arg + " " + minsize.arg2;

@@ -20,10 +20,12 @@
 #ifndef RESULTSTREE_H
 #define RESULTSTREE_H
 
-#include "errortypes.h"
 #include "showtypes.h"
 
+#include <QObject>
 #include <QStandardItemModel>
+#include <QString>
+#include <QStringList>
 #include <QTreeView>
 
 class ApplicationList;
@@ -36,8 +38,8 @@ class QItemSelectionModel;
 class ThreadHandler;
 class QContextMenuEvent;
 class QKeyEvent;
-class QObject;
 class QSettings;
+enum class Severity;
 
 /// @addtogroup GUI
 /// @{
@@ -51,7 +53,7 @@ class ResultsTree : public QTreeView {
     Q_OBJECT
 public:
     explicit ResultsTree(QWidget * parent = nullptr);
-    ~ResultsTree() override;
+
     void initialize(QSettings *settings, ApplicationList *list, ThreadHandler *checkThreadHandler);
 
     /**
@@ -333,7 +335,7 @@ protected:
      *
      * @param severity Severity
      */
-    static QString severityToIcon(Severity::SeverityType severity);
+    static QString severityToIcon(Severity severity);
 
     /**
      * @brief Helper function to open an error within target with application*
@@ -342,15 +344,7 @@ protected:
      * @param application Index of the application to open with. Giving -1
      *  (default value) will open the default application.
      */
-    void startApplication(QStandardItem *target, int application = -1);
-
-    /**
-     * @brief Helper function to copy filename/full path to the clipboard
-     *
-     * @param target Error tree item to open
-     * @param fullPath Are we copying full path or only filename?
-     */
-    void copyPathToClipboard(QStandardItem *target, bool fullPath);
+    void startApplication(const QStandardItem *target, int application = -1);
 
     /**
      * @brief Helper function returning the filename/full path of the error tree item \a target.
@@ -358,7 +352,7 @@ protected:
      * @param target The error tree item containing the filename/full path
      * @param fullPath Whether or not to retrieve the full path or only the filename.
      */
-    static QString getFilePath(QStandardItem *target, bool fullPath);
+    static QString getFilePath(const QStandardItem *target, bool fullPath);
 
     /**
      * @brief Context menu event (user right clicked on the tree)
@@ -388,7 +382,7 @@ protected:
      * @param severity Severity to convert
      * @return Severity as translated string
      */
-    static QString severityToTranslatedString(Severity::SeverityType severity);
+    static QString severityToTranslatedString(Severity severity);
 
     /**
      * @brief Load all settings
@@ -459,7 +453,7 @@ protected:
      * @brief Program settings
      *
      */
-    QSettings *mSettings;
+    QSettings* mSettings{};
 
     /**
      * @brief A string used to filter the results for display.
@@ -471,37 +465,37 @@ protected:
      * @brief List of applications to open errors with
      *
      */
-    ApplicationList *mApplications;
+    ApplicationList* mApplications{};
 
     /**
      * @brief Right clicked item (used by context menu slots)
      *
      */
-    QStandardItem *mContextItem;
+    QStandardItem* mContextItem{};
 
     /**
      * @brief Should full path of files be shown (true) or relative (false)
      *
      */
-    bool mShowFullPath;
+    bool mShowFullPath{};
 
     /**
      * @brief Should full path of files be saved
      *
      */
-    bool mSaveFullPath;
+    bool mSaveFullPath{};
 
     /**
      * @brief Save all errors (true) or only visible (false)
      *
      */
-    bool mSaveAllErrors;
+    bool mSaveAllErrors = true;
 
     /**
      * @brief true if optional column "Id" is shown
      *
      */
-    bool mShowErrorId;
+    bool mShowErrorId{};
 
     /**
      * @brief Path we are currently checking
@@ -513,7 +507,7 @@ protected:
      * @brief Are there any visible errors
      *
      */
-    bool mVisibleErrors;
+    bool mVisibleErrors{};
 
 private:
     /** tag selected items */
@@ -524,11 +518,11 @@ private:
 
     QStringList mHiddenMessageId;
 
-    QItemSelectionModel *mSelectionModel;
-    ThreadHandler *mThread;
+    QItemSelectionModel* mSelectionModel{};
+    ThreadHandler *mThread{};
 
-    bool mShowCppcheck;
-    bool mShowClang;
+    bool mShowCppcheck = true;
+    bool mShowClang = true;
 };
 /// @}
 #endif // RESULTSTREE_H

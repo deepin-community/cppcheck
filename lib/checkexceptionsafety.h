@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +23,6 @@
 
 #include "check.h"
 #include "config.h"
-#include "errortypes.h"
 #include "tokenize.h"
 
 #include <string>
@@ -31,11 +30,6 @@
 class Settings;
 class ErrorLogger;
 class Token;
-
-// CWE ID used:
-static const struct CWE CWE398(398U);   // Indicator of Poor Code Quality
-static const struct CWE CWE703(703U);   // Improper Check or Handling of Exceptional Conditions
-static const struct CWE CWE480(480U);   // Use of Incorrect Operator
 
 
 /// @addtogroup Checks
@@ -55,15 +49,16 @@ public:
     /** This constructor is used when registering the CheckClass */
     CheckExceptionSafety() : Check(myName()) {}
 
+private:
     /** This constructor is used when running checks. */
     CheckExceptionSafety(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        if (tokenizer->isC())
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        if (tokenizer.isC())
             return;
 
-        CheckExceptionSafety checkExceptionSafety(tokenizer, settings, errorLogger);
+        CheckExceptionSafety checkExceptionSafety(&tokenizer, tokenizer.getSettings(), errorLogger);
         checkExceptionSafety.destructors();
         checkExceptionSafety.deallocThrow();
         checkExceptionSafety.checkRethrowCopy();
@@ -94,7 +89,6 @@ public:
     /** @brief %Check for rethrow not from catch scope */
     void rethrowNoCurrentException();
 
-private:
     /** Don't throw exceptions in destructors */
     void destructorsError(const Token * const tok, const std::string &className);
     void deallocThrowError(const Token * const tok, const std::string &varname);

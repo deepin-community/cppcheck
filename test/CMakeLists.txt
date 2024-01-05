@@ -35,6 +35,10 @@ if (BUILD_TESTS)
         target_compile_definitions(testrunner PRIVATE CPPCHECKLIB_IMPORT SIMPLECPP_IMPORT)
         target_link_libraries(testrunner cppcheck-core)
     endif()
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # $ is used in dinit() designated initialization helper
+        target_compile_options_safe(testrunner -Wno-dollar-in-identifier-extension)
+    endif()
 
     if (NOT CMAKE_DISABLE_PRECOMPILE_HEADERS)
         target_precompile_headers(testrunner PRIVATE precompiled.h)
@@ -43,7 +47,9 @@ if (BUILD_TESTS)
     add_dependencies(testrunner copy_cfg)
     add_dependencies(testrunner copy_addons)
     add_dependencies(testrunner copy_platforms)
-    add_dependencies(testrunner run-dmake)
+    if (NOT DISABLE_DMAKE)
+        add_dependencies(testrunner run-dmake)
+    endif()
 
     if (LIBXML2_XMLLINT_EXECUTABLE)
         # TODO: run the CMake implementation of the tests
@@ -88,15 +94,15 @@ if (BUILD_TESTS)
         endforeach()
 
         function(add_cfg CFG_TEST)
-            set(options INCONCLUSIVE)
             set(oneValueArgs PLATFORM NAME)
-            set(multiValueArgs LIBRARY)
+            set(multiValueArgs ADD_LIBRARY)
 
             cmake_parse_arguments(PARSE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
-            if(PARSE_LIBRARY)
-                string(REPLACE ";" "," LIBRARY "${PARSE_LIBRARY}")
-            else()
-                get_filename_component(LIBRARY ${CFG_TEST} NAME_WE)
+            get_filename_component(LIBRARY ${CFG_TEST} NAME_WE)
+            # TODO: get rid of this
+            if(PARSE_ADD_LIBRARY)
+                string(REPLACE ";" "," ADD_LIBRARY "${PARSE_ADD_LIBRARY}")
+                set(LIBRARY "${ADD_LIBRARY},${LIBRARY}")
             endif()
             set(PLATFORM unix64)
             if(PARSE_PLATFORM)
@@ -107,36 +113,36 @@ if (BUILD_TESTS)
             else()
                 string(MAKE_C_IDENTIFIER ${CFG_TEST} TEST_NAME)
             endif()
-            set(INCONCLUSIVE)
-            if(PARSE_INCONCLUSIVE)
-                set(INCONCLUSIVE "--inconclusive")
-            endif()
             if ("cfg-${TEST_NAME}" IN_LIST SKIP_TESTS)
             else()
+                # TODO: remove missingInclude disabling when it no longer is implied by --enable=information
                 # TODO: add syntax check
                 add_test(NAME cfg-${TEST_NAME}
                         COMMAND $<TARGET_FILE:cppcheck>
                         --check-library
                         --platform=${PLATFORM}
                         --library=${LIBRARY}
-                        --enable=information
-                        --enable=style
+                        --enable=style,information
+                        --inconclusive
+                        --force
                         --error-exitcode=1
-                        --suppress=missingIncludeSystem
+                        --disable=missingInclude
                         --inline-suppr
-                        ${INCONCLUSIVE}
                         ${CMAKE_CURRENT_SOURCE_DIR}/cfg/${CFG_TEST}
                 )
             endif()
         endfunction()
-        add_cfg(boost.cpp INCONCLUSIVE)
+        # TODO: glob this
+        add_cfg(boost.cpp)
         add_cfg(bsd.c)
         add_cfg(cairo.c)
-        add_cfg(cppunit.cpp INCONCLUSIVE)
-        add_cfg(gnu.c LIBRARY posix;gnu)
-        add_cfg(googletest.cpp INCONCLUSIVE)
-        add_cfg(gtk.c INCONCLUSIVE)
-        add_cfg(kde.cpp INCONCLUSIVE)
+        add_cfg(cppunit.cpp)
+        # TODO: posix needs to specified first or it has a different mmap() config
+        # TODO: get rid of posix dependency
+        add_cfg(gnu.c ADD_LIBRARY posix)
+        add_cfg(googletest.cpp)
+        add_cfg(gtk.c)
+        add_cfg(kde.cpp)
         add_cfg(libcurl.c)
         add_cfg(libsigc++.cpp)
         add_cfg(lua.c)
@@ -145,14 +151,14 @@ if (BUILD_TESTS)
         add_cfg(openssl.c)
         add_cfg(posix.c)
         add_cfg(python.c)
-        add_cfg(qt.cpp INCONCLUSIVE)
-        add_cfg(sqlite3.c INCONCLUSIVE)
-        add_cfg(std.c INCONCLUSIVE)
-        add_cfg(std.cpp INCONCLUSIVE)
-        add_cfg(windows.cpp INCONCLUSIVE NAME windows32A PLATFORM win32A)
-        add_cfg(windows.cpp INCONCLUSIVE NAME windows32W PLATFORM win32W)
-        add_cfg(windows.cpp INCONCLUSIVE NAME windows64 PLATFORM win64)
-        add_cfg(wxwidgets.cpp INCONCLUSIVE)
+        add_cfg(qt.cpp)
+        add_cfg(sqlite3.c)
+        add_cfg(std.c)
+        add_cfg(std.cpp)
+        add_cfg(windows.cpp NAME windows32A PLATFORM win32A)
+        add_cfg(windows.cpp NAME windows32W PLATFORM win32W)
+        add_cfg(windows.cpp NAME windows64 PLATFORM win64)
+        add_cfg(wxwidgets.cpp)
 
         function(fixture_cost NAME COST)
             if(TEST ${NAME})
@@ -162,10 +168,26 @@ if (BUILD_TESTS)
 
         # Set cost of the more expensive tests to help improve parallel scheduling
         # of tests
-        fixture_cost(TestIO 20)
-        fixture_cost(cfg-std_c 8)
-        fixture_cost(TestThreadExecutor 5)
-        fixture_cost(TestLeakAutoVarRecursiveCountLimit 4)
-        fixture_cost(TestTokenizer 4)
+        #
+        # To collect data to update this list remove "<cmake-build-folder>/Testing/Temporary/CTestCostData.txt",
+        # disable the fixture_cost() statements below and run a Debug build with "ctest -j1" several times.
+        # Afterwards run it with "ctest -j11" and immediately cancel the run and update the list accordingly to the
+        # first eleven tests chosen.
+        #
+        # NOTE: The TestProcessExecutor* tests are not the slowest but they invoke processes which max out the system
+        # and negatively impact the run-time of the other tests
+        if (TRUE)
+            fixture_cost(TestProcessExecutorFiles 1.10)
+            fixture_cost(TestProcessExecutorFS 1.09)
+            fixture_cost(cfg-std_c 1.08)
+            fixture_cost(TestIO 1.07)
+            fixture_cost(cfg-std_cpp 1.06)
+            fixture_cost(TestCondition 1.05)
+            fixture_cost(TestValueFlow 1.04)
+            fixture_cost(TestLeakAutoVarRecursiveCountLimit 1.03)
+            fixture_cost(TestBufferOverrun 1.02)
+            fixture_cost(TestClass 1.01)
+            fixture_cost(TestStl 1.00)
+        endif()
     endif()
 endif()

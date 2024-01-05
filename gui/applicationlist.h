@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,9 @@
 
 #include "application.h"
 
+#include <QList>
 #include <QObject>
+#include <QString>
 
 /// @addtogroup GUI
 /// @{
@@ -131,7 +133,7 @@ private:
      * @brief Index of the default application.
      *
      */
-    int mDefaultApplicationIndex;
+    int mDefaultApplicationIndex = -1;
 };
 /// @}
 #endif // APPLICATIONLIST_H

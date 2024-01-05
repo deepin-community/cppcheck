@@ -1,3 +1,5 @@
+import cppcheckdata
+
 # Holds information about an array, struct or union's element definition.
 class ElementDef:
     def __init__(self, elementType, name, valueType, dimensions = None):
@@ -30,7 +32,7 @@ class ElementDef:
 
         attrs = ["childIndex", "elementType", "valueType"]
         return "{}({}, {}, {})".format(
-            "ED",
+            "ElementDef",
             self.getLongName(),
             inits,
             ", ".join(("{}={}".format(a, repr(getattr(self, a))) for a in attrs))
@@ -253,6 +255,16 @@ class InitializerParser:
                 isFirstElement = False
                 isDesignated = True
 
+            elif self.token.isString and self.ed and self.ed.isArray:
+                self.ed.setInitialized(isDesignated)
+                if self.token == self.token.astParent.astOperand1 and self.token.astParent.astOperand2:
+                    self.token = self.token.astParent.astOperand2
+                    self.ed.markAsCurrent()
+                    self.ed = self.root.getNextChild()
+                else:
+                    self.unwindAndContinue()
+                continue
+
             elif self.token.str == '{':
                 nextChild = self.root.getNextChild() if self.root is not None else None
 
@@ -281,7 +293,7 @@ class InitializerParser:
                         # Fake dummy as nextChild (of current root)
                         nextChild = dummyRoot
 
-                if self.token.astOperand1:
+                if nextChild and self.token.astOperand1:
                     self.root = nextChild
                     self.token = self.token.astOperand1
                     isFirstElement = True
@@ -314,8 +326,9 @@ class InitializerParser:
                             else:
                                 self.ed.parent.setInitialized(isDesignated)
                             self.ed.parent.initializeChildren()
+
                     else:
-                        if self.ed.parent != self.root:
+                        if self.root is not None and self.ed.parent != self.root:
                             # Check if token is correct value type for self.root.children[?]
                             child = self.root.getChildByValueElement(self.ed)
                             if self.token.valueType:
@@ -333,6 +346,8 @@ class InitializerParser:
                         parent = parent.parent
                     isDesignated = False
 
+                    if self.token.isString and self.ed.parent.isArray:
+                        self.ed = self.ed.parent
                 self.unwindAndContinue()
 
     def pushToRootStackAndMarkAsDesignated(self):
@@ -381,6 +396,7 @@ class InitializerParser:
                     break
 
 def misra_9_x(self, data, rule, rawTokens = None):
+
     parser = InitializerParser()
 
     for variable in data.variables:
@@ -410,12 +426,18 @@ def misra_9_x(self, data, rule, rawTokens = None):
             # without it.
             if ed.valueType is None and not variable.isArray:
                 continue
-
             parser.parseInitializer(ed, eq.astOperand2)
             # print(rule, nameToken.str + '=', ed.getInitDump())
             if rule == 902 and not ed.isMisra92Compliant():
                 self.reportError(nameToken, 9, 2)
             if rule == 903 and not ed.isMisra93Compliant():
+                # Do not check when variable is pointer type
+                type_token = variable.nameToken
+                while type_token and type_token.isName:
+                    type_token = type_token.previous
+                if type_token and type_token.str == '*':
+                    continue
+
                 self.reportError(nameToken, 9, 3)
             if rule == 904 and not ed.isMisra94Compliant():
                 self.reportError(nameToken, 9, 4)
@@ -434,7 +456,7 @@ def getElementDef(nameToken, rawTokens = None):
     return ed
 
 def createArrayChildrenDefs(ed, token, var, rawTokens = None):
-    if token.str == '[':
+    if token and token.str == '[':
         if rawTokens is not None:
             foundToken = next((rawToken for rawToken in rawTokens
                                if rawToken.file == token.file
@@ -469,12 +491,38 @@ def createRecordChildrenDefs(ed, var):
     valueType = ed.valueType
     if not valueType or not valueType.typeScope:
         return
-
+    if var is None:
+        return
+    typeToken = var.typeEndToken
+    while typeToken and typeToken.isName:
+        typeToken = typeToken.previous
+    if typeToken and typeToken.str == '*':
+        child = ElementDef("pointer", var.nameToken, var.nameToken.valueType)
+        ed.addChild(child)
+        return
+    child_dict = {}
     for variable in valueType.typeScope.varlist:
         if variable is var:
             continue
         child = getElementDef(variable.nameToken)
-        ed.addChild(child)
+        child_dict[variable.nameToken] = child
+    for scopes in valueType.typeScope.nestedList:
+        varscope = False
+        if scopes.nestedIn == valueType.typeScope:
+            for variable in valueType.typeScope.varlist:
+                if variable.nameToken and variable.nameToken.valueType and variable.nameToken.valueType.typeScope == scopes:
+                    varscope = True
+                    break
+            if not varscope:
+                ed1 = ElementDef("record", scopes.Id, valueType)
+                for variable in scopes.varlist:
+                    child = getElementDef(variable.nameToken)
+                    ed1.addChild(child)
+                child_dict[scopes.bodyStart] = ed1
+    sorted_keys = sorted(list(child_dict.keys()), key=lambda k: "%s %s %s" % (k.file, k.linenr, k.column))
+    for _key in sorted_keys:
+        ed.addChild(child_dict[_key])
+
 
 def getElementByDesignator(ed, token):
     if not token.str in [ '.', '[' ]:

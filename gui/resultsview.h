@@ -23,18 +23,19 @@
 #include "report.h"
 #include "showtypes.h"
 
-#include <QSet>
+#include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QWidget>
 
 class ErrorItem;
+class Settings;
 class ApplicationList;
 class ThreadHandler;
 class QModelIndex;
 class QPrinter;
 class QSettings;
 class CheckStatistics;
-class QObject;
 class QPoint;
 namespace Ui {
     class ResultsView;
@@ -137,6 +138,11 @@ public:
     QString getCheckDirectory();
 
     /**
+     * Set settings used in checking
+     */
+    void setCheckSettings(const Settings& settings);
+
+    /**
      * @brief Inform the view that checking has started
      *
      * @param count Count of files to be checked.
@@ -176,6 +182,17 @@ public:
      */
     void translate();
 
+    /**
+     * @brief This function should be called when analysis is stopped
+     */
+    void stopAnalysis();
+
+    /**
+     * @brief Are there successful results?
+     * @return true if analysis finished without critical errors etc
+     */
+    bool isSuccess() const;
+
     void disableProgressbar();
 
     /**
@@ -189,7 +206,7 @@ public:
      * @brief Return checking statistics.
      * @return Pointer to checking statistics.
      */
-    CheckStatistics *getStatistics() const {
+    const CheckStatistics *getStatistics() const {
         return mStatistics;
     }
 
@@ -197,7 +214,7 @@ public:
      * @brief Return Showtypes.
      * @return Pointer to Showtypes.
      */
-    ShowTypes * getShowTypes() const;
+    const ShowTypes & getShowTypes() const;
 
 signals:
 
@@ -340,15 +357,32 @@ public slots:
      */
     void logCopyComplete();
 
-protected:
+private:
+
+    /**
+     * If provided ErrorItem is a critical error then display warning message
+     * in the resultsview
+     */
+    void handleCriticalError(const ErrorItem& item);
+
     /**
      * @brief Should we show a "No errors found dialog" every time no errors were found?
      */
-    bool mShowNoErrorsMessage;
+    bool mShowNoErrorsMessage = true;
 
     Ui::ResultsView *mUI;
 
     CheckStatistics *mStatistics;
+
+    Settings* mCheckSettings = nullptr;
+
+    /**
+     * Set to true when checking finish successfully. Set to false whenever analysis starts.
+     */
+    bool mSuccess = false;
+
+    /** Critical error ids */
+    QString mCriticalErrors;
 
 private slots:
     /**

@@ -34,24 +34,12 @@ public:
 
 
 private:
-    Settings settings0;
-    Settings settings1;
-    Settings settings_std;
-    Settings settings_windows;
+    const Settings settings0 = settingsBuilder().severity(Severity::portability).build();
+    const Settings settings1 = settingsBuilder().severity(Severity::style).build();
+    const Settings settings_std = settingsBuilder().library("std.cfg").build();
+    const Settings settings_windows = settingsBuilder().library("windows.cfg").severity(Severity::portability).build();
 
     void run() override {
-        LOAD_LIB_2(settings_std.library, "std.cfg");
-        LOAD_LIB_2(settings_windows.library, "windows.cfg");
-        settings0.severity.enable(Severity::portability);
-        settings1.severity.enable(Severity::style);
-        settings_windows.severity.enable(Severity::portability);
-
-        // If there are unused templates, keep those
-        settings0.checkUnusedTemplates = true;
-        settings1.checkUnusedTemplates = true;
-        settings_std.checkUnusedTemplates = true;
-        settings_windows.checkUnusedTemplates = true;
-
         TEST_CASE(combine_strings);
         TEST_CASE(combine_wstrings);
         TEST_CASE(combine_ustrings);
@@ -175,16 +163,14 @@ private:
     }
 
 #define tok(...) tok_(__FILE__, __LINE__, __VA_ARGS__)
-    std::string tok_(const char* file, int line, const char code[], bool simplify = true, Settings::PlatformType type = Settings::Native) {
+    std::string tok_(const char* file, int line, const char code[], bool simplify = true, Platform::Type type = Platform::Type::Native) {
         errout.str("");
 
-        settings0.platform(type);
-        Tokenizer tokenizer(&settings0, this);
+        const Settings settings = settingsBuilder(settings0).platform(type).build();
+        Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
-
-        (void)simplify;
 
         return tokenizer.tokens()->stringifyList(nullptr, !simplify);
     }
@@ -203,34 +189,32 @@ private:
     }
 
 #define tokenizeAndStringify(...) tokenizeAndStringify_(__FILE__, __LINE__, __VA_ARGS__)
-    std::string tokenizeAndStringify_(const char* file, int linenr, const char code[], bool simplify = false, bool expand = true, Settings::PlatformType platform = Settings::Native, const char* filename = "test.cpp", bool cpp11 = true) {
+    std::string tokenizeAndStringify_(const char* file, int linenr, const char code[], bool simplify = false, bool expand = true, Platform::Type platform = Platform::Type::Native, const char* filename = "test.cpp", bool cpp11 = true) {
         errout.str("");
 
-        settings1.debugwarnings = true;
-        settings1.platform(platform);
-        settings1.standards.cpp = cpp11 ? Standards::CPP11 : Standards::CPP03;
+        const Settings settings = settingsBuilder(settings1).debugwarnings().platform(platform).cpp(cpp11 ? Standards::CPP11 : Standards::CPP03).build();
 
         // tokenize..
-        Tokenizer tokenizer(&settings1, this);
+        Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, linenr);
 
         (void)simplify;
 
+        // TODO: should be handled in a better way
         // filter out ValueFlow messages..
         const std::string debugwarnings = errout.str();
         errout.str("");
         std::istringstream istr2(debugwarnings);
         std::string line;
         while (std::getline(istr2,line)) {
-            if (line.find("valueflow.cpp") == std::string::npos)
+            if (line.find("bailout") == std::string::npos)
                 errout << line << "\n";
         }
 
         if (tokenizer.tokens())
             return tokenizer.tokens()->stringifyList(false, expand, false, true, false, nullptr, nullptr);
-        else
-            return "";
+        return "";
     }
 
 #define tokenizeDebugListing(...) tokenizeDebugListing_(__FILE__, __LINE__, __VA_ARGS__)
@@ -269,10 +253,10 @@ private:
         ASSERT_EQUALS(tok(code2), tok(code1));
 
         const char code3[] = "x = L\"1\" TEXT(\"2\") L\"3\";";
-        ASSERT_EQUALS("x = L\"123\" ;", tok(code3, false, Settings::Win64));
+        ASSERT_EQUALS("x = L\"123\" ;", tok(code3, false, Platform::Type::Win64));
 
         const char code4[] = "x = TEXT(\"1\") L\"2\";";
-        ASSERT_EQUALS("x = L\"1\" L\"2\" ;", tok(code4, false, Settings::Win64));
+        ASSERT_EQUALS("x = L\"1\" L\"2\" ;", tok(code4, false, Platform::Type::Win64));
     }
 
     void combine_wstrings() {
@@ -1215,12 +1199,6 @@ private:
             const char expected[] = "class { } ;";
             ASSERT_EQUALS(expected, tok(code));
         }
-
-        {
-            const char code[] = "class { struct { struct { } ; } ; };";
-            const char expected[] = "class { } ;";
-            ASSERT_EQUALS(expected, tok(code));
-        }
     }
 
     void simplifyStructDecl4() {
@@ -1239,8 +1217,7 @@ private:
                             "} abc;\n";
         const char expected[] = "class ABC { "
                                 "void foo ( ) { "
-                                "int i ; "
-                                "float & f = i ; "
+                                "union { int i ; float f ; } ; "
                                 "struct Fee { } ; struct Fee fee ; "
                                 "} "
                                 "union { "
@@ -1324,12 +1301,12 @@ private:
         ASSERT_EQUALS("int f ( ) ;", tok("int __far __syscall f();"));
         ASSERT_EQUALS("int f ( ) ;", tok("int __far __pascal f();"));
         ASSERT_EQUALS("int f ( ) ;", tok("int __far __fortran f();"));
-        ASSERT_EQUALS("int f ( ) ;", tok("int WINAPI f();", true, Settings::Win32A));
-        ASSERT_EQUALS("int f ( ) ;", tok("int APIENTRY f();", true, Settings::Win32A));
-        ASSERT_EQUALS("int f ( ) ;", tok("int CALLBACK f();", true, Settings::Win32A));
+        ASSERT_EQUALS("int f ( ) ;", tok("int WINAPI f();", true, Platform::Type::Win32A));
+        ASSERT_EQUALS("int f ( ) ;", tok("int APIENTRY f();", true, Platform::Type::Win32A));
+        ASSERT_EQUALS("int f ( ) ;", tok("int CALLBACK f();", true, Platform::Type::Win32A));
 
         // don't simplify Microsoft defines in unix code (#7554)
-        ASSERT_EQUALS("enum E { CALLBACK } ;", tok("enum E { CALLBACK } ;", true, Settings::Unix32));
+        ASSERT_EQUALS("enum E { CALLBACK } ;", tok("enum E { CALLBACK } ;", true, Platform::Type::Unix32));
     }
 
     void simplifyAttribute() {
@@ -1340,6 +1317,7 @@ private:
         ASSERT_EQUALS("blah :: blah f ( ) ;", tok("__attribute__ ((visibility(\"default\"))) blah::blah f();"));
         ASSERT_EQUALS("template < T > Result < T > f ( ) ;", tok("template<T> __attribute__ ((warn_unused_result)) Result<T> f();"));
         ASSERT_EQUALS("template < T , U > Result < T , U > f ( ) ;", tok("template<T, U> __attribute__ ((warn_unused_result)) Result<T, U> f();"));
+        ASSERT_EQUALS("void ( * fp ) ( ) ; fp = nullptr ;", tok("typedef void (*fp_t)() __attribute__((noreturn)); fp_t fp = nullptr;")); // #12137
     }
 
     void simplifyFunctorCall() {
@@ -1455,6 +1433,9 @@ private:
                           "}"
                           "namespace AB = A::B;" //duplicate declaration
                           "}"));
+        ASSERT_EQUALS(";",
+                      tok("namespace p = boost::python;\n"
+                          "namespace np = boost::numpy;\n"));
 
         // redeclared nested namespace aliases
         TODO_ASSERT_EQUALS("namespace A { namespace B { void foo ( ) { bar ( A :: B :: ab ( ) ) ; { baz ( A :: a ( ) ) ; } bar ( A :: B :: ab ( ) ) ; } } }",
@@ -2054,7 +2035,7 @@ private:
                                     "strcpy ( a , \"hello\" ) ;\n"
                                     "strcat ( a , \"!\" ) ;\n"
                                     "}";
-            ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Settings::Native, "test.c"));
+            ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Platform::Type::Native, "test.c"));
         }
 
         {
@@ -2150,7 +2131,7 @@ private:
                                     "cin >> x ;\n"
                                     "return x ;\n"
                                     "}";
-            ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Settings::Native, "test.cpp"));
+            ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Platform::Type::Native, "test.cpp"));
         }
     }
 
@@ -2164,7 +2145,7 @@ private:
                                 "int x ; x = 0 ;\n"
                                 "cin >> std :: hex >> x ;\n"
                                 "}";
-        ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Settings::Native, "test.cpp"));
+        ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Platform::Type::Native, "test.cpp"));
     }
 
     void simplifyKnownVariables48() {
@@ -2177,7 +2158,7 @@ private:
                                 "int i ;\n"
                                 "for ( i = 0 ; ( i < sz ) && ( sz > 3 ) ; ++ i ) { }\n"
                                 "}";
-        ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Settings::Native, "test.c"));
+        ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Platform::Type::Native, "test.c"));
     }
 
     void simplifyKnownVariables49() { // #3691
@@ -2193,7 +2174,7 @@ private:
                                 "case 2 : ; x = sz ; break ;\n"
                                 "}\n"
                                 "}";
-        ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Settings::Native, "test.c"));
+        ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Platform::Type::Native, "test.c"));
     }
 
     void simplifyKnownVariables50() { // #4066
@@ -2584,9 +2565,16 @@ private:
 
     void simplifyVarDeclInitLists()
     {
-        const char code[] = "std::vector<int> v{a * b, 1};";
-        const char exp[] = "std :: vector < int > v { a * b , 1 } ;";
-        ASSERT_EQUALS(exp, tok(code));
+        {
+            const char code[] = "std::vector<int> v{a * b, 1};";
+            const char exp[] = "std :: vector < int > v { a * b , 1 } ;";
+            ASSERT_EQUALS(exp, tok(code));
+        }
+        {
+            const char code[] = "enum E { E0 } e{};";
+            const char exp[] = "enum E { E0 } ; enum E e ; e = { } ;";
+            ASSERT_EQUALS(exp, tok(code));
+        }
     }
 };
 

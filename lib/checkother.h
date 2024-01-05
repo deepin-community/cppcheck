@@ -25,6 +25,7 @@
 #include "check.h"
 #include "config.h"
 #include "errortypes.h"
+#include "tokenize.h"
 
 #include <string>
 #include <vector>
@@ -35,7 +36,6 @@ namespace ValueFlow {
 
 class Settings;
 class Token;
-class Tokenizer;
 class Function;
 class Variable;
 class ErrorLogger;
@@ -47,24 +47,36 @@ class ErrorLogger;
 /** @brief Various small checks */
 
 class CPPCHECKLIB CheckOther : public Check {
+    friend class TestCharVar;
+    friend class TestIncompleteStatement;
+    friend class TestOther;
+
 public:
     /** @brief This constructor is used when registering the CheckClass */
     CheckOther() : Check(myName()) {}
 
+    /** Is expression a comparison that checks if a nonzero (unsigned/pointer) expression is less than zero? */
+    static bool comparisonNonZeroExpressionLessThanZero(const Token *tok, const ValueFlow::Value **zeroValue, const Token **nonZeroExpr);
+
+    /** Is expression a comparison that checks if a nonzero (unsigned/pointer) expression is positive? */
+    static bool testIfNonZeroExpressionIsPositive(const Token *tok, const ValueFlow::Value **zeroValue, const Token **nonZeroExpr);
+
+private:
     /** @brief This constructor is used when running checks. */
     CheckOther(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
+
     /** @brief Run checks against the normal token list */
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        CheckOther checkOther(tokenizer, settings, errorLogger);
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        CheckOther checkOther(&tokenizer, tokenizer.getSettings(), errorLogger);
 
         // Checks
         checkOther.warningOldStylePointerCast();
         checkOther.invalidPointerCast();
         checkOther.checkCharVariable();
         checkOther.checkRedundantAssignment();
-        checkOther.checkRedundantAssignmentInSwitch();
+        checkOther.redundantBitwiseOperationInSwitchError();
         checkOther.checkSuspiciousCaseInSwitch();
         checkOther.checkDuplicateBranch();
         checkOther.checkDuplicateExpression();
@@ -85,6 +97,7 @@ public:
         checkOther.checkFuncArgNamesDifferent();
         checkOther.checkShadowVariables();
         checkOther.checkKnownArgument();
+        checkOther.checkKnownPointerToBool();
         checkOther.checkComparePointers();
         checkOther.checkIncompleteStatement();
         checkOther.checkRedundantCopy();
@@ -102,13 +115,6 @@ public:
         checkOther.checkOverlappingWrite();
     }
 
-    /** Is expression a comparison that checks if a nonzero (unsigned/pointer) expression is less than zero? */
-    static bool comparisonNonZeroExpressionLessThanZero(const Token *tok, const ValueFlow::Value **zeroValue, const Token **nonZeroExpr);
-
-    /** Is expression a comparison that checks if a nonzero (unsigned/pointer) expression is positive? */
-    static bool testIfNonZeroExpressionIsPositive(const Token *tok, const ValueFlow::Value **zeroValue, const Token **nonZeroExpr);
-
-
     /** @brief Clarify calculation for ".. a * b ? .." */
     void clarifyCalculation();
 
@@ -123,7 +129,7 @@ public:
 
     /** @brief %Check scope of variables */
     void checkVariableScope();
-    static bool checkInnerScope(const Token *tok, const Variable* var, bool& used);
+    bool checkInnerScope(const Token *tok, const Variable* var, bool& used) const;
 
     /** @brief %Check for comma separated statements in return */
     void checkCommaSeparatedReturn();
@@ -149,8 +155,8 @@ public:
     /** @brief copying to memory or assigning to a variable twice */
     void checkRedundantAssignment();
 
-    /** @brief %Check for assigning to the same variable twice in a switch statement*/
-    void checkRedundantAssignmentInSwitch();
+    /** @brief %Check for redundant bitwise operation in switch statement*/
+    void redundantBitwiseOperationInSwitchError();
 
     /** @brief %Check for code like 'case A||B:'*/
     void checkSuspiciousCaseInSwitch();
@@ -218,6 +224,8 @@ public:
 
     void checkKnownArgument();
 
+    void checkKnownPointerToBool();
+
     void checkComparePointers();
 
     void checkModuloOfOne();
@@ -226,7 +234,6 @@ public:
     void overlappingWriteUnion(const Token *tok);
     void overlappingWriteFunction(const Token *tok);
 
-private:
     // Error messages..
     void checkComparisonFunctionIsAlwaysTrueOrFalseError(const Token* tok, const std::string &functionName, const std::string &varName, const bool result);
     void checkCastIntToCharAndBackError(const Token *tok, const std::string &strFunctionName);
@@ -234,7 +241,7 @@ private:
     void clarifyStatementError(const Token* tok);
     void cstyleCastError(const Token *tok);
     void invalidPointerCastError(const Token* tok, const std::string& from, const std::string& to, bool inconclusive, bool toIsInt);
-    void passedByValueError(const Token *tok, const std::string &parname, bool inconclusive);
+    void passedByValueError(const Variable* var, bool inconclusive, bool isRangeBasedFor = false);
     void constVariableError(const Variable *var, const Function *function);
     void constStatementError(const Token *tok, const std::string &type, bool inconclusive);
     void signedCharArrayIndexError(const Token *tok);
@@ -277,8 +284,9 @@ private:
     void accessMovedError(const Token *tok, const std::string &varname, const ValueFlow::Value *value, bool inconclusive);
     void funcArgNamesDifferent(const std::string & functionName, nonneg int index, const Token* declaration, const Token* definition);
     void funcArgOrderDifferent(const std::string & functionName, const Token * declaration, const Token * definition, const std::vector<const Token*> & declarations, const std::vector<const Token*> & definitions);
-    void shadowError(const Token *var, const Token *shadowed, std::string type);
+    void shadowError(const Token *var, const Token *shadowed, const std::string& type);
     void knownArgumentError(const Token *tok, const Token *ftok, const ValueFlow::Value *value, const std::string &varexpr, bool isVariableExpressionHidden);
+    void knownPointerToBoolError(const Token* tok, const ValueFlow::Value* value);
     void comparePointersError(const Token *tok, const ValueFlow::Value *v1, const ValueFlow::Value *v2);
     void checkModuloOfOneError(const Token *tok);
 
@@ -306,7 +314,7 @@ private:
         c.checkComparisonFunctionIsAlwaysTrueOrFalseError(nullptr, "isless","varName",false);
         c.checkCastIntToCharAndBackError(nullptr, "func_name");
         c.cstyleCastError(nullptr);
-        c.passedByValueError(nullptr, "parametername", false);
+        c.passedByValueError(nullptr, false);
         c.constVariableError(nullptr, nullptr);
         c.constStatementError(nullptr, "type", false);
         c.signedCharArrayIndexError(nullptr);
@@ -348,6 +356,7 @@ private:
         c.shadowError(nullptr, nullptr, "function");
         c.shadowError(nullptr, nullptr, "argument");
         c.knownArgumentError(nullptr, nullptr, nullptr, "x", false);
+        c.knownPointerToBoolError(nullptr, nullptr);
         c.comparePointersError(nullptr, nullptr, nullptr);
         c.redundantAssignmentError(nullptr, nullptr, "var", false);
         c.redundantInitializationError(nullptr, nullptr, "var", false);

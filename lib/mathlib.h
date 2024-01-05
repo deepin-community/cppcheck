@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,10 +37,10 @@ public:
     /** @brief value class */
     class value {
     private:
-        long long mIntValue;
-        double mDoubleValue;
+        long long mIntValue{};
+        double mDoubleValue{};
         enum class Type { INT, LONG, LONGLONG, FLOAT } mType;
-        bool mIsUnsigned;
+        bool mIsUnsigned{};
 
         void promote(const value &v);
 
@@ -69,12 +69,13 @@ public:
     using biguint = unsigned long long;
     static const int bigint_bits;
 
-    static bigint toLongNumber(const std::string & str);
-    static biguint toULongNumber(const std::string & str);
+    /** @brief for conversion of numeric literals - for atoi-like conversions please use strToInt() */
+    static bigint toBigNumber(const std::string & str);
+    /** @brief for conversion of numeric literals - for atoi-like conversions please use strToInt() */
+    static biguint toBigUNumber(const std::string & str);
 
-    template<class T> static std::string toString(T value) {
-        return std::to_string(value);
-    }
+    template<class T> static std::string toString(T value) = delete;
+    /** @brief for conversion of numeric literals */
     static double toDoubleNumber(const std::string & str);
 
     static bool isInt(const std::string & str);
@@ -144,7 +145,7 @@ MathLib::value operator^(const MathLib::value &v1, const MathLib::value &v2);
 MathLib::value operator<<(const MathLib::value &v1, const MathLib::value &v2);
 MathLib::value operator>>(const MathLib::value &v1, const MathLib::value &v2);
 
-template<> CPPCHECKLIB std::string MathLib::toString<double>(double value); // Declare specialization to avoid linker problems
+template<> CPPCHECKLIB std::string MathLib::toString<double>(double value);
 
 /// @}
 //---------------------------------------------------------------------------

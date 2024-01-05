@@ -23,7 +23,7 @@
 
 #include "check.h"
 #include "config.h"
-#include "errortypes.h"
+#include "tokenize.h"
 
 #include <ostream>
 #include <string>
@@ -31,26 +31,29 @@
 class Function;
 class Settings;
 class Token;
-class Tokenizer;
 class Variable;
 class ErrorLogger;
+enum class Severity;
 
 /// @addtogroup Checks
 /// @{
 
 /** @brief %Check input output operations. */
 class CPPCHECKLIB CheckIO : public Check {
+    friend class TestIO;
+
 public:
     /** @brief This constructor is used when registering CheckIO */
     CheckIO() : Check(myName()) {}
 
+private:
     /** @brief This constructor is used when running checks. */
     CheckIO(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
     /** @brief Run checks on the normal token list */
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        CheckIO checkIO(tokenizer, settings, errorLogger);
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        CheckIO checkIO(&tokenizer, tokenizer.getSettings(), errorLogger);
 
         checkIO.checkWrongPrintfScanfArguments();
         checkIO.checkCoutCerrMisusage();
@@ -70,7 +73,6 @@ public:
     /** @brief %Checks type and number of arguments given to functions like printf or scanf*/
     void checkWrongPrintfScanfArguments();
 
-private:
     class ArgumentInfo {
     public:
         ArgumentInfo(const Token *arg, const Settings *settings, bool _isCPP);
@@ -86,14 +88,14 @@ private:
         bool isStdContainer(const Token *tok);
         bool isLibraryType(const Settings *settings) const;
 
-        const Variable *variableInfo;
-        const Token *typeToken;
-        const Function *functionInfo;
-        Token *tempToken;
-        bool element;
-        bool _template;
-        bool address;
-        bool isCPP;
+        const Variable* variableInfo{};
+        const Token* typeToken{};
+        const Function* functionInfo{};
+        Token* tempToken{};
+        bool element{};
+        bool _template{};
+        bool address{};
+        bool isCPP{};
     };
 
     void checkFormatString(const Token * const tok,
@@ -130,7 +132,7 @@ private:
     void invalidLengthModifierError(const Token* tok, nonneg int numFormat, const std::string& modifier);
     void invalidScanfFormatWidthError(const Token* tok, nonneg int numFormat, int width, const Variable *var, const std::string& specifier);
     static void argumentType(std::ostream & os, const ArgumentInfo * argInfo);
-    static Severity::SeverityType getSeverity(const ArgumentInfo *argInfo);
+    static Severity getSeverity(const ArgumentInfo *argInfo);
 
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const override {
         CheckIO c(nullptr, settings, errorLogger);

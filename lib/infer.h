@@ -27,13 +27,15 @@
 #include <string>
 #include <vector>
 
-struct Interval;
 template<class T> class ValuePtr;
 
 struct InferModel {
     virtual bool match(const ValueFlow::Value& value) const = 0;
     virtual ValueFlow::Value yield(MathLib::bigint value) const = 0;
-    virtual ~InferModel() {}
+    virtual ~InferModel() = default;
+    InferModel(const InferModel&) = default;
+protected:
+    InferModel() = default;
 };
 
 std::vector<ValueFlow::Value> infer(const ValuePtr<InferModel>& model,
@@ -53,7 +55,5 @@ std::vector<ValueFlow::Value> infer(const ValuePtr<InferModel>& model,
 
 CPPCHECKLIB std::vector<MathLib::bigint> getMinValue(const ValuePtr<InferModel>& model, const std::list<ValueFlow::Value>& values);
 std::vector<MathLib::bigint> getMaxValue(const ValuePtr<InferModel>& model, const std::list<ValueFlow::Value>& values);
-
-std::string toString(const Interval& i);
 
 #endif

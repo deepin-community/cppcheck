@@ -26,12 +26,18 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 #include <initializer_list>
+#include <limits>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 struct SelectMapKeys {
     template<class Pair>
+    // NOLINTNEXTLINE(readability-const-return-type) - false positive
     typename Pair::first_type operator()(const Pair& p) const {
         return p.first;
     }
@@ -41,6 +47,14 @@ struct SelectMapValues {
     template<class Pair>
     typename Pair::second_type operator()(const Pair& p) const {
         return p.second;
+    }
+};
+
+struct OnExit {
+    std::function<void()> f;
+
+    ~OnExit() {
+        f();
     }
 };
 
@@ -76,6 +90,22 @@ struct EnumClassHash {
         return static_cast<std::size_t>(t);
     }
 };
+
+inline bool startsWith(const std::string& str, const char start[], std::size_t startlen)
+{
+    return str.compare(0, startlen, start) == 0;
+}
+
+template<std::size_t N>
+bool startsWith(const std::string& str, const char (&start)[N])
+{
+    return startsWith(str, start, N - 1);
+}
+
+inline bool startsWith(const std::string& str, const std::string& start)
+{
+    return startsWith(str, start.c_str(), start.length());
+}
 
 inline bool endsWith(const std::string &str, char c)
 {
@@ -177,14 +207,158 @@ CPPCHECKLIB bool matchglobs(const std::vector<std::string> &patterns, const std:
 
 CPPCHECKLIB void strTolower(std::string& str);
 
+template<typename T, typename std::enable_if<std::is_signed<T>::value, bool>::type=true>
+bool strToInt(const std::string& str, T &num, std::string* err = nullptr)
+{
+    long long tmp;
+    try {
+        std::size_t idx = 0;
+        tmp = std::stoll(str, &idx);
+        if (idx != str.size()) {
+            if (err)
+                *err = "not an integer";
+            return false;
+        }
+    } catch (const std::out_of_range&) {
+        if (err)
+            *err = "out of range (stoll)";
+        return false;
+    } catch (const std::invalid_argument &) {
+        if (err)
+            *err = "not an integer";
+        return false;
+    }
+    if (str.front() == '-' && std::numeric_limits<T>::min() == 0) {
+        if (err)
+            *err = "needs to be positive";
+        return false;
+    }
+    if (tmp < std::numeric_limits<T>::min() || tmp > std::numeric_limits<T>::max()) {
+        if (err)
+            *err = "out of range (limits)";
+        return false;
+    }
+    num = static_cast<T>(tmp);
+    return true;
+}
+
+template<typename T, typename std::enable_if<std::is_unsigned<T>::value, bool>::type=true>
+bool strToInt(const std::string& str, T &num, std::string* err = nullptr)
+{
+    unsigned long long tmp;
+    try {
+        std::size_t idx = 0;
+        tmp = std::stoull(str, &idx);
+        if (idx != str.size()) {
+            if (err)
+                *err = "not an integer";
+            return false;
+        }
+    } catch (const std::out_of_range&) {
+        if (err)
+            *err = "out of range (stoull)";
+        return false;
+    } catch (const std::invalid_argument &) {
+        if (err)
+            *err = "not an integer";
+        return false;
+    }
+    if (str.front() == '-') {
+        if (err)
+            *err = "needs to be positive";
+        return false;
+    }
+    if (tmp > std::numeric_limits<T>::max()) {
+        if (err)
+            *err = "out of range (limits)";
+        return false;
+    }
+    num = tmp;
+    return true;
+}
+
+template<typename T>
+T strToInt(const std::string& str)
+{
+    T tmp = 0;
+    std::string err;
+    if (!strToInt(str, tmp, &err))
+        throw std::runtime_error("converting '" + str + "' to integer failed - " + err);
+    return tmp;
+}
+
 /**
  *  Simple helper function:
  * \return size of array
  * */
 template<typename T, int size>
+// cppcheck-suppress unusedFunction - only used in conditional code
 std::size_t getArrayLength(const T (& /*unused*/)[size])
 {
     return size;
+}
+
+/**
+ * @brief get id string. i.e. for dump files
+ * it will be a hexadecimal output.
+ */
+static inline std::string id_string_i(std::uintptr_t l)
+{
+    if (!l)
+        return "0";
+
+    static constexpr int ptr_size = sizeof(void*);
+
+    // two characters of each byte / contains terminating \0
+    static constexpr int buf_size = (ptr_size * 2) + 1;
+
+    char buf[buf_size];
+
+    // needs to be signed so we don't underflow in padding loop
+    int idx = buf_size - 1;
+    buf[idx] = '\0';
+
+    while (l != 0)
+    {
+        char c;
+        const uintptr_t temp = l % 16; // get the remainder
+        if (temp < 10) {
+            // 0-9
+            c = '0' + temp;
+        }
+        else {
+            // a-f
+            c = 'a' + (temp - 10);
+        }
+        buf[--idx] = c; // store in reverse order
+        l = l / 16;
+    }
+
+    return &buf[idx];
+}
+
+static inline std::string id_string(const void* p)
+{
+    return id_string_i(reinterpret_cast<uintptr_t>(p));
+}
+
+static inline const char* bool_to_string(bool b)
+{
+    return b ? "true" : "false";
+}
+
+namespace cppcheck
+{
+    NORETURN inline void unreachable()
+    {
+#if defined(__GNUC__)
+        __builtin_unreachable();
+#elif defined(_MSC_VER)
+        __assume(false);
+#else
+#error "no unreachable implementation"
+#endif
+    }
 }
 
 #endif

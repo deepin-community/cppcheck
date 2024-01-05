@@ -44,6 +44,13 @@
 #define nullptr NULL
 #endif
 
+#if defined(_MSC_VER)
+#  pragma warning(push)
+// suppress warnings about "conversion from 'type1' to 'type2', possible loss of data"
+#  pragma warning(disable : 4267)
+#  pragma warning(disable : 4244)
+#endif
+
 namespace simplecpp {
 
     typedef std::string TokenString;
@@ -113,8 +120,8 @@ namespace simplecpp {
             name = (std::isalpha(static_cast<unsigned char>(string[0])) || string[0] == '_' || string[0] == '$')
                    && (std::memchr(string.c_str(), '\'', string.size()) == nullptr);
             comment = string.size() > 1U && string[0] == '/' && (string[1] == '/' || string[1] == '*');
-            number = std::isdigit(static_cast<unsigned char>(string[0])) || (string.size() > 1U && string[0] == '-' && std::isdigit(static_cast<unsigned char>(string[1])));
-            op = (string.size() == 1U) ? string[0] : '\0';
+            number = isNumberLike(string);
+            op = (string.size() == 1U && !name && !comment && !number) ? string[0] : '\0';
         }
 
         const TokenString& str() const {
@@ -128,6 +135,10 @@ namespace simplecpp {
         bool isOneOf(const char ops[]) const;
         bool startsWithOneOf(const char c[]) const;
         bool endsWithOneOf(const char c[]) const;
+        static bool isNumberLike(const std::string& str) {
+            return std::isdigit(static_cast<unsigned char>(str[0])) ||
+                   (str.size() > 1U && (str[0] == '-' || str[0] == '+') && std::isdigit(static_cast<unsigned char>(str[1])));
+        }
 
         TokenString macro;
         char op;
@@ -193,8 +204,13 @@ namespace simplecpp {
     /** List of tokens. */
     class SIMPLECPP_LIB TokenList {
     public:
+        class Stream;
+
         explicit TokenList(std::vector<std::string> &filenames);
+        /** generates a token list from the given std::istream parameter */
         TokenList(std::istream &istr, std::vector<std::string> &filenames, const std::string &filename=std::string(), OutputList *outputList = nullptr);
+        /** generates a token list from the given filename parameter */
+        TokenList(const std::string &filename, std::vector<std::string> &filenames, OutputList *outputList = nullptr);
         TokenList(const TokenList &other);
 #if __cplusplus >= 201103L
         TokenList(TokenList &&other);
@@ -214,7 +230,7 @@ namespace simplecpp {
         void dump() const;
         std::string stringify() const;
 
-        void readfile(std::istream &istr, const std::string &filename=std::string(), OutputList *outputList = nullptr);
+        void readfile(Stream &stream, const std::string &filename=std::string(), OutputList *outputList = nullptr);
         void constFold();
 
         void removeComments();
@@ -279,10 +295,10 @@ namespace simplecpp {
         void constFoldLogicalOp(Token *tok);
         void constFoldQuestionOp(Token **tok1);
 
-        std::string readUntil(std::istream &istr, const Location &location, char start, char end, OutputList *outputList, unsigned int bom);
+        std::string readUntil(Stream &stream, const Location &location, char start, char end, OutputList *outputList);
         void lineDirective(unsigned int fileIndex, unsigned int line, Location *location);
 
-        std::string lastLine(int maxsize=100000) const;
+        std::string lastLine(int maxsize=1000) const;
         bool isLastLinePreprocessor(int maxsize=100000) const;
 
         unsigned int fileIndex(const std::string &filename);
@@ -358,6 +374,10 @@ namespace simplecpp {
     /** Returns the __cplusplus value for a given standard */
     SIMPLECPP_LIB std::string getCppStdString(const std::string &std);
 }
+
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif
 
 #if (__cplusplus < 201103L) && !defined(__APPLE__)
 #undef nullptr

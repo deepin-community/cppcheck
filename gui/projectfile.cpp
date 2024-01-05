@@ -22,13 +22,21 @@
 #include "config.h"
 #include "importproject.h"
 #include "settings.h"
+#include "utils.h"
 
-#include <string>
 #include <utility>
 
 #include <QFile>
 #include <QDir>
+#include <QIODevice>
+#include <QLatin1String>
+#include <QXmlStreamAttributes>
 #include <QXmlStreamReader>
+#include <QXmlStreamWriter>
+
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+#include <QStringRef>
+#endif
 
 ProjectFile *ProjectFile::mActiveProject;
 
@@ -50,10 +58,10 @@ void ProjectFile::clear()
 {
     const Settings settings;
     clangParser = false;
+    mCheckLevel = CheckLevel::normal;
     mRootPath.clear();
     mBuildDir.clear();
     mImportProject.clear();
-    mAnalyzeAllVsConfigs = true;
     mIncludeDirs.clear();
     mDefines.clear();
     mUndefines.clear();
@@ -61,6 +69,7 @@ void ProjectFile::clear()
     mExcludedPaths.clear();
     mLibraries.clear();
     mPlatform.clear();
+    mProjectName.clear();
     mSuppressions.clear();
     mAddons.clear();
     mClangAnalyzer = mClangTidy = false;
@@ -132,6 +141,9 @@ bool ProjectFile::read(const QString &filename)
 
             if (xmlReader.name() == QString(CppcheckXml::CheckUnusedTemplatesElementName))
                 mCheckUnusedTemplates = readBool(xmlReader);
+
+            if (xmlReader.name() == QString(CppcheckXml::CheckLevelExhaustiveElementName))
+                mCheckLevel = CheckLevel::exhaustive;
 
             // Find include directory from inside project element
             if (xmlReader.name() == QString(CppcheckXml::IncludeDirElementName))
@@ -208,6 +220,8 @@ bool ProjectFile::read(const QString &filename)
                 readStringList(mCodingStandards, xmlReader, CppcheckXml::CodingStandardElementName);
             if (xmlReader.name() == QString(CppcheckXml::CertIntPrecisionElementName))
                 mCertIntPrecision = readInt(xmlReader, 0);
+            if (xmlReader.name() == QString(CppcheckXml::ProjectNameElementName))
+                mProjectName = readString(xmlReader);
 
             break;
 
@@ -234,7 +248,7 @@ bool ProjectFile::read(const QString &filename)
     return projectTagFound;
 }
 
-void ProjectFile::readRootPath(QXmlStreamReader &reader)
+void ProjectFile::readRootPath(const QXmlStreamReader &reader)
 {
     QXmlStreamAttributes attribs = reader.attributes();
     QString name = attribs.value(QString(), CppcheckXml::RootPathNameAttrib).toString();
@@ -346,12 +360,37 @@ int ProjectFile::readInt(QXmlStreamReader &reader, int defaultValue)
     } while (true);
 }
 
+QString ProjectFile::readString(QXmlStreamReader &reader)
+{
+    QString ret;
+    do {
+        const QXmlStreamReader::TokenType type = reader.readNext();
+        switch (type) {
+        case QXmlStreamReader::Characters:
+            ret = reader.text().toString();
+            FALLTHROUGH;
+        case QXmlStreamReader::EndElement:
+            return ret;
+        // Not handled
+        case QXmlStreamReader::StartElement:
+        case QXmlStreamReader::NoToken:
+        case QXmlStreamReader::Invalid:
+        case QXmlStreamReader::StartDocument:
+        case QXmlStreamReader::EndDocument:
+        case QXmlStreamReader::Comment:
+        case QXmlStreamReader::DTD:
+        case QXmlStreamReader::EntityReference:
+        case QXmlStreamReader::ProcessingInstruction:
+            break;
+        }
+    } while (true);
+}
+
 void ProjectFile::readIncludeDirs(QXmlStreamReader &reader)
 {
-    QXmlStreamReader::TokenType type;
     bool allRead = false;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
 
@@ -386,10 +425,9 @@ void ProjectFile::readIncludeDirs(QXmlStreamReader &reader)
 
 void ProjectFile::readDefines(QXmlStreamReader &reader)
 {
-    QXmlStreamReader::TokenType type;
     bool allRead = false;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
             // Read define-elements
@@ -423,10 +461,9 @@ void ProjectFile::readDefines(QXmlStreamReader &reader)
 
 void ProjectFile::readCheckPaths(QXmlStreamReader &reader)
 {
-    QXmlStreamReader::TokenType type;
     bool allRead = false;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
 
@@ -461,10 +498,9 @@ void ProjectFile::readCheckPaths(QXmlStreamReader &reader)
 
 void ProjectFile::readExcludes(QXmlStreamReader &reader)
 {
-    QXmlStreamReader::TokenType type;
     bool allRead = false;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
             // Read exclude-elements
@@ -507,9 +543,8 @@ void ProjectFile::readExcludes(QXmlStreamReader &reader)
 
 void ProjectFile::readVsConfigurations(QXmlStreamReader &reader)
 {
-    QXmlStreamReader::TokenType type;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
             // Read library-elements
@@ -571,9 +606,8 @@ void ProjectFile::readPlatform(QXmlStreamReader &reader)
 
 void ProjectFile::readSuppressions(QXmlStreamReader &reader)
 {
-    QXmlStreamReader::TokenType type;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
             // Read library-elements
@@ -618,9 +652,8 @@ void ProjectFile::readSuppressions(QXmlStreamReader &reader)
 
 void ProjectFile::readTagWarnings(QXmlStreamReader &reader, const QString &tag)
 {
-    QXmlStreamReader::TokenType type;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
             // Read library-elements
@@ -653,10 +686,9 @@ void ProjectFile::readTagWarnings(QXmlStreamReader &reader, const QString &tag)
 
 void ProjectFile::readStringList(QStringList &stringlist, QXmlStreamReader &reader, const char elementname[])
 {
-    QXmlStreamReader::TokenType type;
     bool allRead = false;
     do {
-        type = reader.readNext();
+        QXmlStreamReader::TokenType type = reader.readNext();
         switch (type) {
         case QXmlStreamReader::StartElement:
             // Read library-elements
@@ -744,6 +776,16 @@ void ProjectFile::setVSConfigurations(const QStringList &vsConfigs)
     mVsConfigurations = vsConfigs;
 }
 
+void ProjectFile::setCheckLevel(ProjectFile::CheckLevel checkLevel)
+{
+    mCheckLevel = checkLevel;
+}
+
+bool ProjectFile::isCheckLevelExhaustive() const
+{
+    return mCheckLevel == CheckLevel::exhaustive;
+}
+
 void ProjectFile::setWarningTags(std::size_t hash, const QString& tags)
 {
     if (tags.isEmpty())
@@ -798,7 +840,7 @@ bool ProjectFile::write(const QString &filename)
     }
 
     xmlWriter.writeStartElement(CppcheckXml::AnalyzeAllVsConfigsElementName);
-    xmlWriter.writeCharacters(mAnalyzeAllVsConfigs ? "true" : "false");
+    xmlWriter.writeCharacters(bool_to_string(mAnalyzeAllVsConfigs));
     xmlWriter.writeEndElement();
 
     if (clangParser) {
@@ -808,11 +850,11 @@ bool ProjectFile::write(const QString &filename)
     }
 
     xmlWriter.writeStartElement(CppcheckXml::CheckHeadersElementName);
-    xmlWriter.writeCharacters(mCheckHeaders ? "true" : "false");
+    xmlWriter.writeCharacters(bool_to_string(mCheckHeaders));
     xmlWriter.writeEndElement();
 
     xmlWriter.writeStartElement(CppcheckXml::CheckUnusedTemplatesElementName);
-    xmlWriter.writeCharacters(mCheckUnusedTemplates ? "true" : "false");
+    xmlWriter.writeCharacters(bool_to_string(mCheckUnusedTemplates));
     xmlWriter.writeEndElement();
 
     xmlWriter.writeStartElement(CppcheckXml::MaxCtuDepthElementName);
@@ -942,6 +984,11 @@ bool ProjectFile::write(const QString &filename)
         }
     }
 
+    if (mCheckLevel == CheckLevel::exhaustive) {
+        xmlWriter.writeStartElement(CppcheckXml::CheckLevelExhaustiveElementName);
+        xmlWriter.writeEndElement();
+    }
+
     // Cppcheck Premium
     if (mBughunting) {
         xmlWriter.writeStartElement(CppcheckXml::BughuntingElementName);
@@ -956,6 +1003,12 @@ bool ProjectFile::write(const QString &filename)
     if (mCertIntPrecision > 0) {
         xmlWriter.writeStartElement(CppcheckXml::CertIntPrecisionElementName);
         xmlWriter.writeCharacters(QString::number(mCertIntPrecision));
+        xmlWriter.writeEndElement();
+    }
+
+    if (!mProjectName.isEmpty()) {
+        xmlWriter.writeStartElement(CppcheckXml::ProjectNameElementName);
+        xmlWriter.writeCharacters(mProjectName);
         xmlWriter.writeEndElement();
     }
 
@@ -1040,21 +1093,21 @@ void ProjectFile::SafeChecks::saveToXml(QXmlStreamWriter &xmlWriter) const
 {
     if (!classes && !externalFunctions && !internalFunctions && !externalVariables)
         return;
-    xmlWriter.writeStartElement(Settings::SafeChecks::XmlRootName);
+    xmlWriter.writeStartElement(QString(Settings::SafeChecks::XmlRootName));
     if (classes) {
-        xmlWriter.writeStartElement(Settings::SafeChecks::XmlClasses);
+        xmlWriter.writeStartElement(QString(Settings::SafeChecks::XmlClasses));
         xmlWriter.writeEndElement();
     }
     if (externalFunctions) {
-        xmlWriter.writeStartElement(Settings::SafeChecks::XmlExternalFunctions);
+        xmlWriter.writeStartElement(QString(Settings::SafeChecks::XmlExternalFunctions));
         xmlWriter.writeEndElement();
     }
     if (internalFunctions) {
-        xmlWriter.writeStartElement(Settings::SafeChecks::XmlInternalFunctions);
+        xmlWriter.writeStartElement(QString(Settings::SafeChecks::XmlInternalFunctions));
         xmlWriter.writeEndElement();
     }
     if (externalVariables) {
-        xmlWriter.writeStartElement(Settings::SafeChecks::XmlExternalVariables);
+        xmlWriter.writeStartElement(QString(Settings::SafeChecks::XmlExternalVariables));
         xmlWriter.writeEndElement();
     }
     xmlWriter.writeEndElement();

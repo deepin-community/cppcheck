@@ -19,13 +19,15 @@
 #include "analyzerinfo.h"
 
 #include "errorlogger.h"
+#include "filesettings.h"
 #include "path.h"
 #include "utils.h"
 
-#include <tinyxml2.h>
 #include <cstring>
 #include <map>
 #include <sstream> // IWYU pragma: keep
+
+#include "xml.h"
 
 AnalyzerInformation::~AnalyzerInformation()
 {
@@ -44,7 +46,7 @@ static std::string getFilename(const std::string &fullpath)
     return fullpath.substr(pos1,pos2);
 }
 
-void AnalyzerInformation::writeFilesTxt(const std::string &buildDir, const std::list<std::string> &sourcefiles, const std::string &userDefines, const std::list<ImportProject::FileSettings> &fileSettings)
+void AnalyzerInformation::writeFilesTxt(const std::string &buildDir, const std::list<std::string> &sourcefiles, const std::string &userDefines, const std::list<FileSettings> &fileSettings)
 {
     std::map<std::string, unsigned int> fileCount;
 
@@ -57,7 +59,7 @@ void AnalyzerInformation::writeFilesTxt(const std::string &buildDir, const std::
             fout << afile << ".a" << (++fileCount[afile]) << ":" << userDefines << ":" << Path::simplifyPath(Path::fromNativeSeparators(f)) << '\n';
     }
 
-    for (const ImportProject::FileSettings &fs : fileSettings) {
+    for (const FileSettings &fs : fileSettings) {
         const std::string afile = getFilename(fs.filename);
         fout << afile << ".a" << (++fileCount[afile]) << ":" << fs.cfg << ":" << Path::simplifyPath(Path::fromNativeSeparators(fs.filename)) << std::endl;
     }
@@ -72,7 +74,7 @@ void AnalyzerInformation::close()
     }
 }
 
-static bool skipAnalysis(const std::string &analyzerInfoFile, std::size_t hash, std::list<ErrorMessage> *errors)
+static bool skipAnalysis(const std::string &analyzerInfoFile, std::size_t hash, std::list<ErrorMessage> &errors)
 {
     tinyxml2::XMLDocument doc;
     const tinyxml2::XMLError error = doc.LoadFile(analyzerInfoFile.c_str());
@@ -89,7 +91,7 @@ static bool skipAnalysis(const std::string &analyzerInfoFile, std::size_t hash, 
 
     for (const tinyxml2::XMLElement *e = rootNode->FirstChildElement(); e; e = e->NextSiblingElement()) {
         if (std::strcmp(e->Name(), "error") == 0)
-            errors->emplace_back(e);
+            errors.emplace_back(e);
     }
 
     return true;
@@ -127,7 +129,7 @@ std::string AnalyzerInformation::getAnalyzerInfoFile(const std::string &buildDir
     return Path::join(buildDir, filename) + ".analyzerinfo";
 }
 
-bool AnalyzerInformation::analyzeFile(const std::string &buildDir, const std::string &sourcefile, const std::string &cfg, std::size_t hash, std::list<ErrorMessage> *errors)
+bool AnalyzerInformation::analyzeFile(const std::string &buildDir, const std::string &sourcefile, const std::string &cfg, std::size_t hash, std::list<ErrorMessage> &errors)
 {
     if (buildDir.empty() || sourcefile.empty())
         return true;

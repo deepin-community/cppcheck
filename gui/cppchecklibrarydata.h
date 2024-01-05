@@ -20,19 +20,19 @@
 #define CPPCHECKLIBRARYDATA_H
 
 #include <QList>
+#include <QMap>
+#include <QPair>
+#include <QSet>
 #include <QString>
 #include <QStringList>
-#include <QMap>
 
 class QIODevice;
 
 class CppcheckLibraryData {
 public:
-    CppcheckLibraryData();
+    CppcheckLibraryData() = default;
 
     struct Container {
-        Container() : access_arrayLike(false), size_templateParameter(-1) {}
-
         QString id;
         QString inherits;
         QString startPattern;
@@ -40,8 +40,8 @@ public:
         QString opLessAllowed;
         QString itEndPattern;
 
-        bool access_arrayLike;
-        int size_templateParameter;
+        bool access_arrayLike{};
+        int size_templateParameter = -1;
 
         struct {
             QString templateParameter;
@@ -58,10 +58,10 @@ public:
             QString yields;
             QString action;
         };
-        QList<struct Function> accessFunctions;
-        QList<struct Function> otherFunctions;
-        QList<struct Function> sizeFunctions;
-        QList<struct RangeItemRecordType> rangeItemRecordTypeList;
+        QList<Function> accessFunctions;
+        QList<Function> otherFunctions;
+        QList<Function> sizeFunctions;
+        QList<RangeItemRecordType> rangeItemRecordTypeList;
     };
 
     struct Define {
@@ -70,21 +70,17 @@ public:
     };
 
     struct Function {
-        Function() : noreturn(Unknown), gccPure(false), gccConst(false),
-            leakignore(false), useretval(false) {}
-
         QString comments;
         QString name;
-        enum TrueFalseUnknown { False, True, Unknown } noreturn;
-        bool gccPure;
-        bool gccConst;
-        bool leakignore;
-        bool useretval;
+        enum TrueFalseUnknown { False, True, Unknown } noreturn = Unknown;
+        bool gccPure{};
+        bool gccConst{};
+        bool leakignore{};
+        bool useretval{};
         struct ReturnValue {
-            ReturnValue() : container(-1) {}
             QString type;
             QString value;
-            int container;
+            int container = -1;
             bool empty() const {
                 return type.isNull() && value.isNull() && container < 0;
             }
@@ -94,33 +90,29 @@ public:
             QString secure;
         } formatstr;
         struct Arg {
-            Arg() : nr(0), notbool(false), notnull(false), notuninit(false),
-                formatstr(false), strz(false) {}
-
             QString name;
-            unsigned int nr;
+            unsigned int nr{};
             static const unsigned int ANY;
             static const unsigned int VARIADIC;
             QString defaultValue;
-            bool notbool;
-            bool notnull;
-            bool notuninit;
-            bool formatstr;
-            bool strz;
+            bool notbool{};
+            bool notnull{};
+            bool notuninit{};
+            bool formatstr{};
+            bool strz{};
             QString valid;
             struct MinSize {
                 QString type;
                 QString arg;
                 QString arg2;
             };
-            QList<struct MinSize> minsizes;
+            QList<MinSize> minsizes;
             struct Iterator {
-                Iterator() : container(-1) {}
-                int container;
+                int container = -1;
                 QString type;
             } iterator;
         };
-        QList<struct Arg> args;
+        QList<Arg> args;
 
         struct {
             QString severity;
@@ -145,31 +137,20 @@ public:
     struct MemoryResource {
         QString type; // "memory" or "resource"
         struct Alloc {
-            Alloc() :
-                isRealloc(false),
-                init(false),
-                arg(-1),        // -1: Has no optional "arg" attribute
-                reallocArg(-1)  // -1: Has no optional "realloc-arg" attribute
-            {}
-
-            bool isRealloc;
-            bool init;
-            int arg;
-            int reallocArg;
+            bool isRealloc{};
+            bool init{};
+            int arg = -1; // -1: Has no optional "realloc-arg" attribute
+            int reallocArg = -1; // -1: Has no optional "arg" attribute
             QString bufferSize;
             QString name;
         };
         struct Dealloc {
-            Dealloc() :
-                arg(-1)        // -1: Has no optional "arg" attribute
-            {}
-
-            int arg;
+            int arg = -1; // -1: Has no optional "arg" attribute
             QString name;
         };
 
-        QList<struct Alloc> alloc;
-        QList<struct Dealloc> dealloc;
+        QList<Alloc> alloc;
+        QList<Dealloc> dealloc;
         QStringList use;
     };
 
@@ -191,25 +172,17 @@ public:
 
     struct Reflection {
         struct Call {
-            Call() :
-                arg {-1}    // -1: Mandatory "arg" attribute not available
-            {}
-
-            int arg;
+            int arg = -1; // -1: Mandatory "arg" attribute not available
             QString name;
         };
 
-        QList<struct Call> calls;
+        QList<Call> calls;
     };
 
     struct Markup {
         struct CodeBlocks {
-            CodeBlocks() :
-                offset {-1}
-            {}
-
             QStringList blocks;
-            int offset;
+            int offset = -1;
             QString start;
             QString end;
         };
@@ -221,8 +194,8 @@ public:
         };
 
         QString ext;
-        bool afterCode;
-        bool reportErrors;
+        bool afterCode{};
+        bool reportErrors{};
         QStringList keywords;
         QStringList importer;
         QList<CodeBlocks> codeBlocks;
@@ -230,12 +203,8 @@ public:
     };
 
     struct SmartPointer {
-        SmartPointer() :
-            unique {false}
-        {}
-
         QString name;
-        bool unique;
+        bool unique{};
     };
 
     struct Entrypoint {
@@ -275,18 +244,18 @@ public:
     QString open(QIODevice &file);
     QString toString() const;
 
-    QList<struct Container> containers;
-    QList<struct Define> defines;
-    QList<struct Function> functions;
-    QList<struct MemoryResource> memoryresource;
-    QList<struct PodType> podtypes;
+    QList<Container> containers;
+    QList<Define> defines;
+    QList<Function> functions;
+    QList<MemoryResource> memoryresource;
+    QList<PodType> podtypes;
     QList<TypeChecks> typeChecks;
-    QList<struct PlatformType> platformTypes;
+    QList<PlatformType> platformTypes;
     QStringList undefines;
-    QList<struct SmartPointer> smartPointers;
-    QList<struct Reflection> reflections;
-    QList<struct Markup> markups;
-    QList<struct Entrypoint> entrypoints;
+    QList<SmartPointer> smartPointers;
+    QList<Reflection> reflections;
+    QList<Markup> markups;
+    QList<Entrypoint> entrypoints;
 };
 
 #endif // CPPCHECKLIBRARYDATA_H

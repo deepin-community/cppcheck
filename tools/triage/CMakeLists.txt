@@ -8,13 +8,10 @@ CheckOptions:
   - { key: HeaderFileExtensions,          value: 'x' }
 ")
 
-    if (CMAKE_BUILD_TYPE STREQUAL "Release")
-        add_definitions(-DQT_NO_DEBUG)
-        add_definitions(-DQT_NO_DEBUG_OUTPUT)
-        add_definitions(-DQT_NO_WARNING_OUTPUT)
-    else()
-        add_definitions(-DQT_DEBUG)
-    endif()
+    add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:QT_NO_DEBUG>)
+    add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:QT_NO_DEBUG_OUTPUT>)
+    add_compile_definitions($<$<NOT:$<CONFIG:Debug>>:QT_NO_WARNING_OUTPUT>)
+    add_compile_definitions($<$<CONFIG:Debug>:QT_DEBUG>)
 
     file(GLOB hdrs "*.h")
     file(GLOB srcs "*.cpp")
@@ -30,6 +27,7 @@ CheckOptions:
         ${PROJECT_SOURCE_DIR}/gui/codeeditorstyle.cpp
         ${PROJECT_SOURCE_DIR}/gui/codeeditor.cpp)
     set_target_properties(triage PROPERTIES AUTOMOC ON)
+    set_target_properties(cppcheck-gui PROPERTIES WIN32_EXECUTABLE ON)
     target_include_directories(triage PRIVATE ${PROJECT_SOURCE_DIR}/lib/ ${PROJECT_SOURCE_DIR}/gui/)
     target_link_libraries(triage ${QT_CORE_LIB} ${QT_GUI_LIB} ${QT_WIDGETS_LIB})
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")

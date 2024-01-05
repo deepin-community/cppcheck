@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +22,14 @@
 #include "codeeditstylecontrols.h"
 
 #include <QDialogButtonBox>
+#include <QFlags>
+#include <QFontMetrics>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QPushButton>
+#include <QStringList>
+#include <QVBoxLayout>
+#include <QtGlobal>
 
 class QWidget;
 
@@ -165,38 +172,38 @@ StyleEditDialog::StyleEditDialog(const CodeEditorStyle& newStyle,
             this, SLOT(setStyleDefaultLight()));
     connect(mBtnDefaultDark, SIGNAL(clicked()),
             this, SLOT(setStyleDefaultDark()));
-    connect(mBtnWidgetColorFG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedWidgetFG(const QColor&)));
-    connect(mBtnWidgetColorBG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedWidgetBG(const QColor&)));
-    connect(mBtnHighlightBG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedHighlightBG(const QColor&)));
-    connect(mBtnLineNumFG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedLineNumFG(const QColor&)));
-    connect(mBtnLineNumBG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedLineNumBG(const QColor&)));
-    connect(mBtnKeywordFG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedKeywordFG(const QColor&)));
-    connect(mCBKeywordWeight, SIGNAL(weightChanged(const QFont::Weight&)),
-            this, SLOT(weightChangedKeyword(const QFont::Weight&)));
-    connect(mBtnClassFG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedClassFG(const QColor&)));
-    connect(mCBClassWeight, SIGNAL(weightChanged(const QFont::Weight&)),
-            this, SLOT(weightChangedClass(const QFont::Weight&)));
-    connect(mBtnQuoteFG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedQuoteFG(const QColor&)));
-    connect(mCBQuoteWeight, SIGNAL(weightChanged(const QFont::Weight&)),
-            this, SLOT(weightChangedQuote(const QFont::Weight&)));
-    connect(mBtnCommentFG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedCommentFG(const QColor&)));
-    connect(mCBCommentWeight, SIGNAL(weightChanged(const QFont::Weight&)),
-            this, SLOT(weightChangedComment(const QFont::Weight&)));
-    connect(mBtnSymbolFG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedSymbolFG(const QColor&)));
-    connect(mBtnSymbolBG, SIGNAL(colorChanged(const QColor&)),
-            this, SLOT(colorChangedSymbolBG(const QColor&)));
-    connect(mCBSymbolWeight, SIGNAL(weightChanged(const QFont::Weight&)),
-            this, SLOT(weightChangedSymbol(const QFont::Weight&)));
+    connect(mBtnWidgetColorFG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedWidgetFG(QColor)));
+    connect(mBtnWidgetColorBG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedWidgetBG(QColor)));
+    connect(mBtnHighlightBG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedHighlightBG(QColor)));
+    connect(mBtnLineNumFG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedLineNumFG(QColor)));
+    connect(mBtnLineNumBG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedLineNumBG(QColor)));
+    connect(mBtnKeywordFG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedKeywordFG(QColor)));
+    connect(mCBKeywordWeight, SIGNAL(weightChanged(QFont::Weight)),
+            this, SLOT(weightChangedKeyword(QFont::Weight)));
+    connect(mBtnClassFG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedClassFG(QColor)));
+    connect(mCBClassWeight, SIGNAL(weightChanged(QFont::Weight)),
+            this, SLOT(weightChangedClass(QFont::Weight)));
+    connect(mBtnQuoteFG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedQuoteFG(QColor)));
+    connect(mCBQuoteWeight, SIGNAL(weightChanged(QFont::Weight)),
+            this, SLOT(weightChangedQuote(QFont::Weight)));
+    connect(mBtnCommentFG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedCommentFG(QColor)));
+    connect(mCBCommentWeight, SIGNAL(weightChanged(QFont::Weight)),
+            this, SLOT(weightChangedComment(QFont::Weight)));
+    connect(mBtnSymbolFG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedSymbolFG(QColor)));
+    connect(mBtnSymbolBG, SIGNAL(colorChanged(QColor)),
+            this, SLOT(colorChangedSymbolBG(QColor)));
+    connect(mCBSymbolWeight, SIGNAL(weightChanged(QFont::Weight)),
+            this, SLOT(weightChangedSymbol(QFont::Weight)));
 }
 
 void StyleEditDialog::updateControls()
@@ -289,7 +296,7 @@ void StyleEditDialog::colorChangedKeywordFG(const QColor& newColor)
     updateStyle();
 }
 
-void StyleEditDialog::weightChangedKeyword(const QFont::Weight& newWeight)
+void StyleEditDialog::weightChangedKeyword(QFont::Weight newWeight)
 {
     mStyleOutgoing.keywordWeight = newWeight;
     updateStyle();
@@ -301,7 +308,7 @@ void StyleEditDialog::colorChangedClassFG(const QColor& newColor)
     updateStyle();
 }
 
-void StyleEditDialog::weightChangedClass(const QFont::Weight& newWeight)
+void StyleEditDialog::weightChangedClass(QFont::Weight newWeight)
 {
     mStyleOutgoing.classWeight = newWeight;
     updateStyle();
@@ -313,7 +320,7 @@ void StyleEditDialog::colorChangedQuoteFG(const QColor& newColor)
     updateStyle();
 }
 
-void StyleEditDialog::weightChangedQuote(const QFont::Weight& newWeight)
+void StyleEditDialog::weightChangedQuote(QFont::Weight newWeight)
 {
     mStyleOutgoing.quoteWeight = newWeight;
     updateStyle();
@@ -325,7 +332,7 @@ void StyleEditDialog::colorChangedCommentFG(const QColor& newColor)
     updateStyle();
 }
 
-void StyleEditDialog::weightChangedComment(const QFont::Weight& newWeight)
+void StyleEditDialog::weightChangedComment(QFont::Weight newWeight)
 {
     mStyleOutgoing.commentWeight = newWeight;
     updateStyle();
@@ -343,7 +350,7 @@ void StyleEditDialog::colorChangedSymbolBG(const QColor& newColor)
     updateStyle();
 }
 
-void StyleEditDialog::weightChangedSymbol(const QFont::Weight& newWeight)
+void StyleEditDialog::weightChangedSymbol(QFont::Weight newWeight)
 {
     mStyleOutgoing.symbolWeight = newWeight;
     updateStyle();

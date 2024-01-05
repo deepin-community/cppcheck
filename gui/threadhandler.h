@@ -27,7 +27,9 @@
 
 #include <QDateTime>
 #include <QElapsedTimer>
+#include <QList>
 #include <QObject>
+#include <QString>
 #include <QStringList>
 
 class ResultsView;
@@ -62,7 +64,7 @@ public:
      *
      * @param view View to show error results
      */
-    void initialize(ResultsView *view);
+    void initialize(const ResultsView *view);
 
     /**
      * @brief Load settings
@@ -228,7 +230,7 @@ protected:
      * @brief The previous scan duration in milliseconds.
      *
      */
-    int mScanDuration;
+    int mScanDuration{};
 
     /**
      * @brief Function to delete all threads
@@ -252,9 +254,9 @@ protected:
      * @brief The amount of threads currently running
      *
      */
-    int mRunningThreadCount;
+    int mRunningThreadCount{};
 
-    bool mAnalyseWholeProgram;
+    bool mAnalyseWholeProgram{};
 
     QStringList mAddonsAndTools;
     QList<Suppressions::Suppression> mSuppressions;

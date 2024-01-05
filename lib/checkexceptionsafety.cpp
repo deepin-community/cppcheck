@@ -19,6 +19,8 @@
 //---------------------------------------------------------------------------
 #include "checkexceptionsafety.h"
 
+#include "errortypes.h"
+#include "library.h"
 #include "settings.h"
 #include "symboldatabase.h"
 #include "token.h"
@@ -35,6 +37,9 @@ namespace {
     CheckExceptionSafety instance;
 }
 
+static const CWE CWE398(398U);   // Indicator of Poor Code Quality
+static const CWE CWE703(703U);   // Improper Check or Handling of Exceptional Conditions
+static const CWE CWE480(480U);   // Use of Incorrect Operator
 
 //---------------------------------------------------------------------------
 
@@ -42,6 +47,8 @@ void CheckExceptionSafety::destructors()
 {
     if (!mSettings->severity.isEnabled(Severity::warning))
         return;
+
+    logChecker("CheckExceptionSafety::destructors"); // warning
 
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
 
@@ -89,6 +96,8 @@ void CheckExceptionSafety::deallocThrow()
 {
     if (!mSettings->severity.isEnabled(Severity::warning))
         return;
+
+    logChecker("CheckExceptionSafety::deallocThrow"); // warning
 
     const bool printInconclusive = mSettings->certainty.isEnabled(Certainty::inconclusive);
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
@@ -163,6 +172,8 @@ void CheckExceptionSafety::checkRethrowCopy()
     if (!mSettings->severity.isEnabled(Severity::style))
         return;
 
+    logChecker("CheckExceptionSafety::checkRethrowCopy"); // style
+
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
 
     for (const Scope &scope : symbolDatabase->scopeList) {
@@ -205,6 +216,8 @@ void CheckExceptionSafety::checkCatchExceptionByValue()
     if (!mSettings->severity.isEnabled(Severity::style))
         return;
 
+    logChecker("CheckExceptionSafety::checkCatchExceptionByValue"); // style
+
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
 
     for (const Scope &scope : symbolDatabase->scopeList) {
@@ -241,19 +254,18 @@ static const Token * functionThrowsRecursive(const Function * function, std::set
          tok != function->functionScope->bodyEnd; tok = tok->next()) {
         if (Token::simpleMatch(tok, "try {"))
             tok = tok->linkAt(1);  // skip till start of catch clauses
-        if (tok->str() == "throw") {
+        if (tok->str() == "throw")
             return tok;
-        } else if (tok->function()) {
+        if (tok->function()) {
             const Function * called = tok->function();
             // check if called function has an exception specification
-            if (called->isThrow() && called->throwArg) {
+            if (called->isThrow() && called->throwArg)
                 return tok;
-            } else if (called->isNoExcept() && called->noexceptArg &&
-                       called->noexceptArg->str() != "true") {
+            if (called->isNoExcept() && called->noexceptArg &&
+                called->noexceptArg->str() != "true")
                 return tok;
-            } else if (functionThrowsRecursive(called, recursive)) {
+            if (functionThrowsRecursive(called, recursive))
                 return tok;
-            }
         }
     }
 
@@ -274,6 +286,8 @@ static const Token * functionThrows(const Function * function)
 //--------------------------------------------------------------------------
 void CheckExceptionSafety::nothrowThrows()
 {
+    logChecker("CheckExceptionSafety::nothrowThrows");
+
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
 
     for (const Scope * scope : symbolDatabase->functionScopes) {
@@ -318,6 +332,8 @@ void CheckExceptionSafety::unhandledExceptionSpecification()
     if (!mSettings->severity.isEnabled(Severity::style) || !mSettings->certainty.isEnabled(Certainty::inconclusive))
         return;
 
+    logChecker("CheckExceptionSafety::unhandledExceptionSpecification"); // style,inconclusive
+
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
 
     for (const Scope * scope : symbolDatabase->functionScopes) {
@@ -325,9 +341,9 @@ void CheckExceptionSafety::unhandledExceptionSpecification()
         if (scope->function && !scope->function->isThrow() && !mSettings->library.isentrypoint(scope->className)) {
             for (const Token *tok = scope->function->functionScope->bodyStart->next();
                  tok != scope->function->functionScope->bodyEnd; tok = tok->next()) {
-                if (tok->str() == "try") {
+                if (tok->str() == "try")
                     break;
-                } else if (tok->function()) {
+                if (tok->function()) {
                     const Function * called = tok->function();
                     // check if called function has an exception specification
                     if (called->isThrow() && called->throwArg) {
@@ -355,6 +371,7 @@ void CheckExceptionSafety::unhandledExceptionSpecificationError(const Token * co
 //--------------------------------------------------------------------------
 void CheckExceptionSafety::rethrowNoCurrentException()
 {
+    logChecker("CheckExceptionSafety::rethrowNoCurrentException");
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope * scope : symbolDatabase->functionScopes) {
         const Function* function = scope->function;

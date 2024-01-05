@@ -25,9 +25,7 @@
 #include "tokenize.h"
 
 #include <list>
-#include <memory>
 #include <sstream> // IWYU pragma: keep
-#include <string>
 
 class TestMemleakInClass;
 class TestMemleakNoVar;
@@ -39,7 +37,7 @@ public:
     TestMemleak() : TestFixture("TestMemleak") {}
 
 private:
-    Settings settings;
+    const Settings settings;
 
     void run() override {
         TEST_CASE(testFunctionReturnType);
@@ -126,33 +124,25 @@ public:
     TestMemleakInFunction() : TestFixture("TestMemleakInFunction") {}
 
 private:
-    Settings settings0;
-    Settings settings1;
-    Settings settings2;
+    const Settings settings = settingsBuilder().library("std.cfg").library("posix.cfg").build();
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
     void check_(const char* file, int line, const char code[]) {
         // Clear the error buffer..
         errout.str("");
 
-        Settings *settings = &settings1;
-
         // Tokenize..
-        Tokenizer tokenizer(settings, this);
+        Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
         // Check for memory leaks..
-        CheckMemoryLeakInFunction checkMemoryLeak(&tokenizer, settings, this);
+        CheckMemoryLeakInFunction checkMemoryLeak(&tokenizer, &settings, this);
         checkMemoryLeak.checkReallocUsage();
     }
 
 
     void run() override {
-        LOAD_LIB_2(settings1.library, "std.cfg");
-        LOAD_LIB_2(settings1.library, "posix.cfg");
-        LOAD_LIB_2(settings2.library, "std.cfg");
-
         TEST_CASE(realloc1);
         TEST_CASE(realloc2);
         TEST_CASE(realloc3);
@@ -470,7 +460,7 @@ public:
     TestMemleakInClass() : TestFixture("TestMemleakInClass") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().severity(Severity::warning).severity(Severity::style).library("std.cfg").build();
 
     /**
      * Tokenize and execute leak check for given code
@@ -491,11 +481,6 @@ private:
     }
 
     void run() override {
-        settings.severity.enable(Severity::warning);
-        settings.severity.enable(Severity::style);
-
-        LOAD_LIB_2(settings.library, "std.cfg");
-
         TEST_CASE(class1);
         TEST_CASE(class2);
         TEST_CASE(class3);
@@ -1686,7 +1671,7 @@ public:
     TestMemleakStructMember() : TestFixture("TestMemleakStructMember") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().library("std.cfg").library("posix.cfg").build();
 
     void check_(const char* file, int line, const char code[], bool isCPP = true) {
         // Clear the error buffer..
@@ -1703,9 +1688,6 @@ private:
     }
 
     void run() override {
-        LOAD_LIB_2(settings.library, "std.cfg");
-        LOAD_LIB_2(settings.library, "posix.cfg");
-
         // testing that errors are detected
         TEST_CASE(err);
 
@@ -1754,7 +1736,7 @@ private:
 
         TEST_CASE(customAllocation);
 
-        TEST_CASE(lambdaInForLoop); // #9793
+        TEST_CASE(lambdaInScope); // #9793
     }
 
     void err() {
@@ -2245,8 +2227,8 @@ private:
         ASSERT_EQUALS("[test.c:7]: (error) Memory leak: abc.a\n", errout.str());
     }
 
-    void lambdaInForLoop() { // #9793
-        check(
+    void lambdaInScope() {
+        check( // #9793
             "struct S { int * p{nullptr}; };\n"
             "int main()\n"
             "{\n"
@@ -2258,6 +2240,35 @@ private:
             "    delete[] s.p;\n"
             "    return 0;\n"
             "}", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check(
+            "struct S { int* p; };\n"
+            "void f() {\n"
+            "    auto g = []() {\n"
+            "      S s;\n"
+            "      s.p = new int;\n"
+            "    };\n"
+            "}\n", true);
+        ASSERT_EQUALS("[test.cpp:6]: (error) Memory leak: s.p\n", errout.str());
+
+        check(
+            "struct S { int* p; };\n"
+            "void f() {\n"
+            "    S s;\n"
+            "    s.p = new int;\n"
+            "    auto g = [&]() {\n"
+            "        delete s.p;\n"
+            "    };\n"
+            "    g();\n"
+            "}\n"
+            "void h() {\n"
+            "    S s;\n"
+            "    s.p = new int;\n"
+            "    [&]() {\n"
+            "        delete s.p;\n"
+            "    }();\n"
+            "}\n", true);
         ASSERT_EQUALS("", errout.str());
     }
 };
@@ -2273,7 +2284,7 @@ public:
     TestMemleakNoVar() : TestFixture("TestMemleakNoVar") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().certainty(Certainty::inconclusive).severity(Severity::warning).library("std.cfg").library("posix.cfg").build();
 
     void check_(const char* file, int line, const char code[]) {
         // Clear the error buffer..
@@ -2290,13 +2301,6 @@ private:
     }
 
     void run() override {
-        settings.certainty.setEnabled(Certainty::inconclusive, true);
-        settings.libraries.emplace_back("posix");
-        settings.severity.enable(Severity::warning);
-
-        LOAD_LIB_2(settings.library, "std.cfg");
-        LOAD_LIB_2(settings.library, "posix.cfg");
-
         // pass allocated memory to function..
         TEST_CASE(functionParameter);
 
@@ -2451,6 +2455,50 @@ private:
               "void f(S* s, int N) {\n"
               "    s->p = s->p ? strcpy(new char[N], s->p) : nullptr;\n"
               "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {};\n" // #11866
+              "void f(bool b);\n"
+              "void g() {\n"
+              "    f(new int());\n"
+              "    f(new std::vector<int>());\n"
+              "    f(new S());\n"
+              "    f(new tm());\n"
+              "    f(malloc(sizeof(S)));\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Allocation with new, f doesn't release it.\n"
+                      "[test.cpp:5]: (error) Allocation with new, f doesn't release it.\n"
+                      "[test.cpp:6]: (error) Allocation with new, f doesn't release it.\n"
+                      "[test.cpp:7]: (error) Allocation with new, f doesn't release it.\n"
+                      "[test.cpp:8]: (error) Allocation with malloc, f doesn't release it.\n",
+                      errout.str());
+
+        check("void f(uintptr_t u);\n"
+              "void g() {\n"
+              "    f((uintptr_t)new int());\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(uint8_t u);\n"
+              "void g() {\n"
+              "    f((uint8_t)new int());\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Allocation with new, f doesn't release it.\n",
+                      errout.str());
+
+        check("void f(int i, T t);\n"
+              "void g(int i, U* u);\n"
+              "void h() {\n"
+              "    f(1, new int());\n"
+              "    g(1, new int());\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(T t);\n"
+              "struct U {};\n"
+              "void g() {\n"
+              "    f(new U());\n"
+              "}\n");
         ASSERT_EQUALS("", errout.str());
     }
 

@@ -1,4 +1,7 @@
 lessThan(QT_MAJOR_VERSION, 5): error(requires >= Qt 5 (You used: $$QT_VERSION))
+greaterThan(QT_MAJOR_VERSION, 5): error(Qt 6 is not supported via qmake - please use CMake instead)
+
+message("Building the GUI via qmake is deprecated and will be removed in a future release. Please use CMake instead.")
 
 TEMPLATE = app
 TARGET = cppcheck-gui
@@ -63,6 +66,7 @@ win32 {
 RESOURCES = gui.qrc
 FORMS = about.ui \
         applicationdialog.ui \
+        compliancereportdialog.ui \
         fileview.ui \
         helpdialog.ui \
         mainwindow.ui \
@@ -87,7 +91,8 @@ TRANSLATIONS =  cppcheck_de.ts \
                 cppcheck_ru.ts \
                 cppcheck_sr.ts \
                 cppcheck_sv.ts \
-                cppcheck_zh_CN.ts
+                cppcheck_zh_CN.ts \
+                cppcheck_zh_TW.ts
 
 # Windows-specific options
 CONFIG += embed_manifest_exe
@@ -122,6 +127,7 @@ HEADERS += aboutdialog.h \
            codeeditstyledialog.h \
            codeeditor.h \
            common.h \
+           compliancereportdialog.h \
            csvreport.h \
            erroritem.h \
            filelist.h \
@@ -162,6 +168,7 @@ SOURCES += aboutdialog.cpp \
            codeeditstyledialog.cpp \
            codeeditor.cpp \
            common.cpp \
+           compliancereportdialog.cpp \
            csvreport.cpp \
            erroritem.cpp \
            filelist.cpp \
@@ -211,7 +218,6 @@ contains(QMAKE_CXX, clang++) {
 
 contains(HAVE_QCHART, [yY][eE][sS]) {
     QT += charts
-    DEFINES += HAVE_QCHART
 } else {
     message("Charts disabled - to enable it pass HAVE_QCHART=yes to qmake.")
 }

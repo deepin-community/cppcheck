@@ -30,11 +30,9 @@ public:
     Test64BitPortability() : TestFixture("Test64BitPortability") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().severity(Severity::portability).library("std.cfg").build();
 
     void run() override {
-        settings.severity.enable(Severity::portability);
-
         TEST_CASE(novardecl);
         TEST_CASE(functionpar);
         TEST_CASE(structmember);
@@ -51,7 +49,6 @@ private:
 
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
-        LOAD_LIB_2(settings.library, "std.cfg");
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
@@ -66,6 +63,12 @@ private:
               "void f() {\n"
               "    CharArray foo = \"\";\n"
               "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct T { std::vector<int>*a[2][2]; };\n" // #11560
+              "void f(T& t, int i, int j) {\n"
+              "    t.a[i][j] = new std::vector<int>;\n"
+              "}\n");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -288,6 +291,18 @@ private:
               "     [&](int ele) { return \"test\" == text; });\n"
               "  return nullptr;\n"
               "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n" // #12159
+              "    std::future<int> f() const {\n"
+              "        return {};\n"
+              "    }\n"
+              "};\n"
+              "int g() {\n"
+              "    std::shared_ptr<S> s = std::make_shared<S>();\n"
+              "    auto x = s->f();\n"
+              "    return x.get();\n"
+              "}\n");
         ASSERT_EQUALS("", errout.str());
     }
 };

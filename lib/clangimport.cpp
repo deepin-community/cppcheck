@@ -30,9 +30,9 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <iterator>
 #include <list>
 #include <map>
 #include <memory>
@@ -124,22 +124,22 @@ static std::string unquote(const std::string &s)
 static std::vector<std::string> splitString(const std::string &line)
 {
     std::vector<std::string> ret;
-    std::string::size_type pos1 = line.find_first_not_of(" ");
+    std::string::size_type pos1 = line.find_first_not_of(' ');
     while (pos1 < line.size()) {
         std::string::size_type pos2;
         if (std::strchr("*()", line[pos1])) {
             ret.push_back(line.substr(pos1,1));
-            pos1 = line.find_first_not_of(" ", pos1 + 1);
+            pos1 = line.find_first_not_of(' ', pos1 + 1);
             continue;
         }
         if (line[pos1] == '<')
-            pos2 = line.find(">", pos1);
+            pos2 = line.find('>', pos1);
         else if (line[pos1] == '\"')
-            pos2 = line.find("\"", pos1+1);
+            pos2 = line.find('\"', pos1+1);
         else if (line[pos1] == '\'') {
-            pos2 = line.find("\'", pos1+1);
+            pos2 = line.find('\'', pos1+1);
             if (pos2 < (int)line.size() - 3 && line.compare(pos2, 3, "\':\'", 0, 3) == 0)
-                pos2 = line.find("\'", pos2 + 3);
+                pos2 = line.find('\'', pos2 + 3);
         } else {
             pos2 = pos1;
             while (pos2 < line.size() && (line[pos2] == '_' || line[pos2] == ':' || std::isalnum((unsigned char)line[pos2])))
@@ -159,10 +159,10 @@ static std::vector<std::string> splitString(const std::string &line)
                 }
             }
 
-            pos2 = line.find(" ", pos1) - 1;
+            pos2 = line.find(' ', pos1) - 1;
             if ((std::isalpha(line[pos1]) || line[pos1] == '_') &&
                 line.find("::", pos1) < pos2 &&
-                line.find("::", pos1) < line.find("<", pos1)) {
+                line.find("::", pos1) < line.find('<', pos1)) {
                 pos2 = line.find("::", pos1);
                 ret.push_back(line.substr(pos1, pos2-pos1));
                 ret.emplace_back("::");
@@ -170,10 +170,10 @@ static std::vector<std::string> splitString(const std::string &line)
                 continue;
             }
             if ((std::isalpha(line[pos1]) || line[pos1] == '_') &&
-                line.find("<", pos1) < pos2 &&
-                line.find("<<",pos1) != line.find("<",pos1) &&
-                line.find(">", pos1) != std::string::npos &&
-                line.find(">", pos1) > pos2) {
+                line.find('<', pos1) < pos2 &&
+                line.find("<<",pos1) != line.find('<',pos1) &&
+                line.find('>', pos1) != std::string::npos &&
+                line.find('>', pos1) > pos2) {
                 int level = 0;
                 for (pos2 = pos1; pos2 < line.size(); ++pos2) {
                     if (line[pos2] == '<')
@@ -186,7 +186,7 @@ static std::vector<std::string> splitString(const std::string &line)
                 }
                 if (level > 1 && pos2 + 1 >= line.size())
                     return std::vector<std::string> {};
-                pos2 = line.find(" ", pos2);
+                pos2 = line.find(' ', pos2);
                 if (pos2 != std::string::npos)
                     --pos2;
             }
@@ -196,7 +196,7 @@ static std::vector<std::string> splitString(const std::string &line)
             break;
         }
         ret.push_back(line.substr(pos1, pos2+1-pos1));
-        pos1 = line.find_first_not_of(" ", pos2 + 1);
+        pos1 = line.find_first_not_of(' ', pos2 + 1);
     }
     return ret;
 }
@@ -205,10 +205,10 @@ static std::vector<std::string> splitString(const std::string &line)
 namespace clangimport {
     struct Data {
         struct Decl {
-            explicit Decl(Scope *scope) : def(nullptr), enumerator(nullptr), function(nullptr), scope(scope), var(nullptr) {}
-            Decl(Token *def, Variable *var) : def(def), enumerator(nullptr), function(nullptr), scope(nullptr), var(var) {}
-            Decl(Token *def, Function *function) : def(def), enumerator(nullptr), function(function), scope(nullptr), var(nullptr) {}
-            Decl(Token *def, Enumerator *enumerator) : def(def), enumerator(enumerator), function(nullptr), scope(nullptr), var(nullptr) {}
+            explicit Decl(Scope *scope) : scope(scope) {}
+            Decl(Token *def, Variable *var) : def(def), var(var) {}
+            Decl(Token *def, Function *function) : def(def), function(function) {}
+            Decl(Token *def, Enumerator *enumerator) : def(def), enumerator(enumerator) {}
             void ref(Token *tok) const {
                 if (enumerator)
                     tok->enumerator(enumerator);
@@ -219,11 +219,11 @@ namespace clangimport {
                     tok->varId(var->declarationId());
                 }
             }
-            Token *def;
-            Enumerator *enumerator;
-            Function *function;
-            Scope *scope;
-            Variable *var;
+            Token* def{};
+            Enumerator* enumerator{};
+            Function* function{};
+            Scope* scope{};
+            Variable* var{};
         };
 
         const Settings *mSettings = nullptr;
@@ -412,9 +412,9 @@ std::string clangimport::AstNode::getSpelling() const
             return "";
     }
     const std::string &str = mExtTokens[typeIndex - 1];
-    if (str.compare(0,4,"col:") == 0)
+    if (startsWith(str,"col:"))
         return "";
-    if (str.compare(0,8,"<invalid") == 0)
+    if (startsWith(str,"<invalid"))
         return "";
     if (nodeType == RecordDecl && str == "struct")
         return "";
@@ -499,20 +499,21 @@ void clangimport::AstNode::dumpAst(int num, int indent) const
 void clangimport::AstNode::setLocations(TokenList *tokenList, int file, int line, int col)
 {
     for (const std::string &ext: mExtTokens) {
-        if (ext.compare(0, 5, "<col:") == 0)
-            col = std::atoi(ext.substr(5).c_str());
-        else if (ext.compare(0, 6, "<line:") == 0) {
-            line = std::atoi(ext.substr(6).c_str());
-            if (ext.find(", col:") != std::string::npos)
-                col = std::atoi(ext.c_str() + ext.find(", col:") + 6);
+        if (startsWith(ext, "<col:"))
+            col = strToInt<int>(ext.substr(5, ext.find_first_of(",>", 5) - 5));
+        else if (startsWith(ext, "<line:")) {
+            line = strToInt<int>(ext.substr(6, ext.find_first_of(":,>", 6) - 6));
+            const auto pos = ext.find(", col:");
+            if (pos != std::string::npos)
+                col = strToInt<int>(ext.substr(pos+6, ext.find_first_of(":,>", pos+6) - (pos+6)));
         } else if (ext[0] == '<') {
             const std::string::size_type colon = ext.find(':');
             if (colon != std::string::npos) {
-                const bool windowsPath = colon == 2 && ext.size() > 4 && ext[3] == '\\';
+                const bool windowsPath = colon == 2 && ext.size() > 3 && ext[2] == ':';
                 const std::string::size_type sep1 = windowsPath ? ext.find(':', 4) : colon;
                 const std::string::size_type sep2 = ext.find(':', sep1 + 1);
                 file = tokenList->appendFileIfNew(ext.substr(1, sep1 - 1));
-                line = MathLib::toLongNumber(ext.substr(sep1 + 1, sep2 - sep1 - 1));
+                line = strToInt<int>(ext.substr(sep1 + 1, sep2 - sep1 - 1));
             }
         }
     }
@@ -541,13 +542,13 @@ const ::Type * clangimport::AstNode::addTypeTokens(TokenList *tokenList, const s
         return addTypeTokens(tokenList, str.substr(0, str.find("\':\'") + 1), scope);
     }
 
-    if (str.compare(0, 16, "'enum (anonymous") == 0)
+    if (startsWith(str, "'enum (anonymous"))
         return nullptr;
 
     std::string type;
     if (str.find(" (") != std::string::npos) {
-        if (str.find("<") != std::string::npos)
-            type = str.substr(1, str.find("<")) + "...>";
+        if (str.find('<') != std::string::npos)
+            type = str.substr(1, str.find('<')) + "...>";
         else
             type = str.substr(1,str.find(" (")-1);
     } else
@@ -557,8 +558,8 @@ const ::Type * clangimport::AstNode::addTypeTokens(TokenList *tokenList, const s
         type.erase(type.find("(*)("));
         type += "*";
     }
-    if (type.find("(") != std::string::npos)
-        type.erase(type.find("("));
+    if (type.find('(') != std::string::npos)
+        type.erase(type.find('('));
 
     std::stack<Token *> lpar;
     for (const std::string &s: splitString(type)) {
@@ -620,7 +621,7 @@ void clangimport::AstNode::setValueType(Token *tok)
     for (int i = 0; i < 2; i++) {
         const std::string &type = getType(i);
 
-        if (type.find("<") != std::string::npos)
+        if (type.find('<') != std::string::npos)
             // TODO
             continue;
 
@@ -629,7 +630,7 @@ void clangimport::AstNode::setValueType(Token *tok)
         if (!decl.front())
             break;
 
-        const ValueType valueType = ValueType::parseDecl(decl.front(), mData->mSettings, true); // TODO: set isCpp
+        const ValueType valueType = ValueType::parseDecl(decl.front(), *mData->mSettings);
         if (valueType.type != ValueType::Type::UNKNOWN_TYPE) {
             tok->setValueType(new ValueType(valueType));
             break;
@@ -733,7 +734,7 @@ Token *clangimport::AstNode::createTokens(TokenList *tokenList)
     if (nodeType == BreakStmt)
         return addtoken(tokenList, "break");
     if (nodeType == CharacterLiteral) {
-        const int c = MathLib::toLongNumber(mExtTokens.back());
+        const int c = MathLib::toBigNumber(mExtTokens.back());
         if (c == 0)
             return addtoken(tokenList, "\'\\0\'");
         if (c == '\r')
@@ -897,8 +898,8 @@ Token *clangimport::AstNode::createTokens(TokenList *tokenList)
             return newtok;
         }
         std::string type = getType();
-        if (type.find("*") != std::string::npos)
-            type = type.erase(type.rfind("*"));
+        if (type.find('*') != std::string::npos)
+            type = type.erase(type.rfind('*'));
         addTypeTokens(tokenList, type);
         if (!children.empty()) {
             Token *bracket1 = addtoken(tokenList, "[");
@@ -942,7 +943,7 @@ Token *clangimport::AstNode::createTokens(TokenList *tokenList)
     }
     if (nodeType == DeclRefExpr) {
         int addrIndex = mExtTokens.size() - 1;
-        while (addrIndex > 1 && mExtTokens[addrIndex].compare(0,2,"0x") != 0)
+        while (addrIndex > 1 && !startsWith(mExtTokens[addrIndex],"0x"))
             --addrIndex;
         const std::string addr = mExtTokens[addrIndex];
         std::string name = unquote(getSpelling());
@@ -984,14 +985,14 @@ Token *clangimport::AstNode::createTokens(TokenList *tokenList)
     }
     if (nodeType == EnumDecl) {
         int colIndex = mExtTokens.size() - 1;
-        while (colIndex > 0 && mExtTokens[colIndex].compare(0,4,"col:") != 0 && mExtTokens[colIndex].compare(0,5,"line:") != 0)
+        while (colIndex > 0 && !startsWith(mExtTokens[colIndex],"col:") && !startsWith(mExtTokens[colIndex],"line:"))
             --colIndex;
         if (colIndex == 0)
             return nullptr;
 
         mData->enumValue = 0;
         Token *enumtok = addtoken(tokenList, "enum");
-        Token *nametok = nullptr;
+        const Token *nametok = nullptr;
         {
             int nameIndex = mExtTokens.size() - 1;
             while (nameIndex > colIndex && mExtTokens[nameIndex][0] == '\'')
@@ -1130,10 +1131,10 @@ Token *clangimport::AstNode::createTokens(TokenList *tokenList)
         Token *s = getChild(0)->createTokens(tokenList);
         Token *dot = addtoken(tokenList, ".");
         std::string memberName = getSpelling();
-        if (memberName.compare(0, 2, "->") == 0) {
+        if (startsWith(memberName, "->")) {
             dot->originalName("->");
             memberName = memberName.substr(2);
-        } else if (memberName.compare(0, 1, ".") == 0) {
+        } else if (startsWith(memberName, ".")) {
             memberName = memberName.substr(1);
         }
         if (memberName.empty())
@@ -1147,10 +1148,10 @@ Token *clangimport::AstNode::createTokens(TokenList *tokenList)
     if (nodeType == NamespaceDecl) {
         if (children.empty())
             return nullptr;
-        Token *defToken = addtoken(tokenList, "namespace");
+        const Token *defToken = addtoken(tokenList, "namespace");
         const std::string &s = mExtTokens[mExtTokens.size() - 2];
-        Token *nameToken = (s.compare(0,4,"col:")==0 || s.compare(0,5,"line:")==0) ?
-                           addtoken(tokenList, mExtTokens.back()) : nullptr;
+        const Token* nameToken = (startsWith(s, "col:") || startsWith(s, "line:")) ?
+                                 addtoken(tokenList, mExtTokens.back()) : nullptr;
         Scope *scope = createScope(tokenList, Scope::ScopeType::eNamespace, children, defToken);
         if (nameToken)
             scope->className = nameToken->str();
@@ -1372,7 +1373,6 @@ void clangimport::AstNode::createTokensFunctionDecl(TokenList *tokenList)
         function->nestedIn = nestedIn;
     function->argDef = par1;
     // Function arguments
-    function->argumentList.reserve(children.size());
     for (int i = 0; i < children.size(); ++i) {
         AstNodePtr child = children[i];
         if (child->nodeType != ParmVarDecl)
@@ -1494,7 +1494,8 @@ Token * clangimport::AstNode::createTokensVarDecl(TokenList *tokenList)
         eq->astOperand1(vartok1);
         eq->astOperand2(children.back()->createTokens(tokenList));
         return eq;
-    } else if (mExtTokens.back() == "callinit") {
+    }
+    if (mExtTokens.back() == "callinit") {
         Token *par1 = addtoken(tokenList, "(");
         par1->astOperand1(vartok1);
         par1->astOperand2(getChild(0)->createTokens(tokenList));
@@ -1502,7 +1503,8 @@ Token * clangimport::AstNode::createTokensVarDecl(TokenList *tokenList)
         par1->link(par2);
         par2->link(par1);
         return par1;
-    } else if (mExtTokens.back() == "listinit") {
+    }
+    if (mExtTokens.back() == "listinit") {
         return getChild(0)->createTokens(tokenList);
     }
     return vartok1;
@@ -1521,7 +1523,7 @@ static void setTypes(TokenList *tokenList)
     }
 }
 
-static void setValues(Tokenizer *tokenizer, SymbolDatabase *symbolDatabase)
+static void setValues(const Tokenizer *tokenizer, const SymbolDatabase *symbolDatabase)
 {
     const Settings * const settings = tokenizer->getSettings();
 
@@ -1535,22 +1537,22 @@ static void setValues(Tokenizer *tokenizer, SymbolDatabase *symbolDatabase)
                 return v * dim.num;
             });
             if (var.valueType())
-                typeSize += mul * var.valueType()->typeSize(*settings, true);
+                typeSize += mul * var.valueType()->typeSize(settings->platform, true);
         }
         scope.definedType->sizeOf = typeSize;
     }
 
     for (Token *tok = const_cast<Token*>(tokenizer->tokens()); tok; tok = tok->next()) {
         if (Token::simpleMatch(tok, "sizeof (")) {
-            ValueType vt = ValueType::parseDecl(tok->tokAt(2), settings, tokenizer->isCPP());
-            const int sz = vt.typeSize(*settings, true);
+            ValueType vt = ValueType::parseDecl(tok->tokAt(2), *settings);
+            const int sz = vt.typeSize(settings->platform, true);
             if (sz <= 0)
                 continue;
             long long mul = 1;
-            for (Token *arrtok = tok->linkAt(1)->previous(); arrtok; arrtok = arrtok->previous()) {
+            for (const Token *arrtok = tok->linkAt(1)->previous(); arrtok; arrtok = arrtok->previous()) {
                 const std::string &a = arrtok->str();
                 if (a.size() > 2 && a[0] == '[' && a.back() == ']')
-                    mul *= std::atoi(a.substr(1).c_str());
+                    mul *= strToInt<long long>(a.substr(1));
                 else
                     break;
             }
@@ -1577,7 +1579,7 @@ void clangimport::parseClangAstDump(Tokenizer *tokenizer, std::istream &f)
     std::string line;
     std::vector<AstNodePtr> tree;
     while (std::getline(f,line)) {
-        const std::string::size_type pos1 = line.find("-");
+        const std::string::size_type pos1 = line.find('-');
         if (pos1 == std::string::npos)
             continue;
         if (!tree.empty() && line.substr(pos1) == "-<<<NULL>>>") {
@@ -1585,7 +1587,7 @@ void clangimport::parseClangAstDump(Tokenizer *tokenizer, std::istream &f)
             tree[level - 1]->children.push_back(nullptr);
             continue;
         }
-        const std::string::size_type pos2 = line.find(" ", pos1);
+        const std::string::size_type pos2 = line.find(' ', pos1);
         if (pos2 < pos1 + 4 || pos2 == std::string::npos)
             continue;
         const std::string nodeType = line.substr(pos1+1, pos2 - pos1 - 1);

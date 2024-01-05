@@ -21,10 +21,12 @@
 #include "pathmatch.h"
 
 #include <algorithm>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #include <QDir>
+#include <Qt>
 
 QStringList FileList::getDefaultFilters()
 {
@@ -97,9 +99,8 @@ QStringList FileList::getFileList() const
             names << name;
         }
         return names;
-    } else {
-        return applyExcludeList();
     }
+    return applyExcludeList();
 }
 
 void FileList::addExcludeList(const QStringList &paths)

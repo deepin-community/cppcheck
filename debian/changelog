@@ -1,6 +1,58 @@
+cppcheck (2.13.0-2) unstable; urgency=medium
+
+  * Extend disable-some-tests-on-32bit-platforms to disable another test in
+    testother.cpp (upstream #12300).
+
+ -- Joachim Reichel <reichel@debian.org>  Fri, 29 Dec 2023 08:14:30 +0000
+
+cppcheck (2.13.0-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Remove patch disable-some-tests-about-char-signedness  (fixed upstream).
+  * Build cppcheck-gui against Qt6 instead of Qt5 as per cppcheck build
+    system deprecation message:
+    * Replace Build-Depends libqt5charts5-dev, qt5-qmake, qtbase5-dev,
+      qtbase5-dev-tools, and qttools5-dev by qt6-base-dev,
+      qt6-base-dev-tools, qt6-charts-dev, and qt6-tools-dev
+    * Re-enable QCharts support again on all platforms (ia64 and sparc64
+      seem to keep up again, powerpc is completely gone).
+
+ -- Joachim Reichel <reichel@debian.org>  Thu, 28 Dec 2023 09:17:07 +0100
+
+cppcheck (2.12.0-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Remove patches fix-version and fix-qt-compile-definitions (fixed
+    upstream).
+
+ -- Joachim Reichel <reichel@debian.org>  Sat, 16 Sep 2023 13:06:16 +0200
+
+cppcheck (2.11-3) unstable; urgency=medium
+
+  * Disable rules support and remove build dependency on PCRE1 due to the
+    removal of PCRE1 (Closes: #1000024).
+
+ -- Joachim Reichel <reichel@debian.org>  Sat, 01 Jul 2023 12:01:04 +0200
+
+cppcheck (2.11-2) unstable; urgency=medium
+
+  * Update patch disable-some-tests-about-char-signedness to disable
+    another failing test on armhf etc. (Closes: 1038983).
+
+ -- Joachim Reichel <reichel@debian.org>  Mon, 26 Jun 2023 22:50:55 +0200
+
+cppcheck (2.11-1) unstable; urgency=medium
+
+  * New upstream version (Closes: #1037608).
+  * Add patches applying fix-version and fix-qt-compile-definitions.
+  * Remove plist*.plist in dh_clean target.
+
+ -- Joachim Reichel <reichel@debian.org>  Fri, 23 Jun 2023 19:06:35 +0200
+
 cppcheck (2.10-2) unstable; urgency=medium
 
   * Add patch disable-some-tests-about-char-signedness.
+  * Remove patch fix-version (fixed upstream).
 
  -- Joachim Reichel <reichel@debian.org>  Mon, 06 Feb 2023 08:33:11 +0100
 

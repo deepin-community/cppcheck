@@ -25,13 +25,13 @@
 #include "check.h"
 #include "config.h"
 #include "errortypes.h"
+#include "tokenize.h"
 
 #include <string>
 #include <set>
 
 class Settings;
 class Token;
-class Tokenizer;
 class ErrorLogger;
 class Variable;
 
@@ -49,13 +49,14 @@ public:
     /** This constructor is used when registering the CheckClass */
     CheckAutoVariables() : Check(myName()) {}
 
+private:
     /** This constructor is used when running checks. */
     CheckAutoVariables(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
     /** @brief Run checks against the normal token list */
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        CheckAutoVariables checkAutoVariables(tokenizer, settings, errorLogger);
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        CheckAutoVariables checkAutoVariables(&tokenizer, tokenizer.getSettings(), errorLogger);
         checkAutoVariables.assignFunctionArg();
         checkAutoVariables.checkVarLifetime();
         checkAutoVariables.autoVariables();
@@ -76,7 +77,6 @@ public:
 
     void checkVarLifetimeScope(const Token * start, const Token * end);
 
-private:
     void errorAutoVariableAssignment(const Token *tok, bool inconclusive);
     void errorReturnDanglingLifetime(const Token *tok, const ValueFlow::Value* val);
     void errorInvalidLifetime(const Token *tok, const ValueFlow::Value* val);

@@ -498,6 +498,11 @@
                       <ref name="CONTAINER-YIELDS"/>
                     </attribute>
                   </optional>
+                  <optional>
+                    <attribute name="returnType">
+                      <data type="string"/>
+                    </attribute>
+                  </optional>
                   <empty/>
                 </element>
               </zeroOrMore>
@@ -693,6 +698,7 @@
       <value>push</value>
       <value>pop</value>
       <value>find</value>
+      <value>find-const</value>
       <value>insert</value>
       <value>erase</value>
       <value>change-content</value>

@@ -24,30 +24,42 @@
 #include "erroritem.h"
 #include "errorlogger.h"
 #include "errortypes.h"
+#include "filesettings.h"
 #include "settings.h"
 #include "standards.h"
 #include "threadresult.h"
+#include "utils.h"
 
+#include <algorithm>
 #include <cstddef>
-#include <functional>
+#include <iterator>
 #include <list>
-#include <map>
 #include <ostream>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <QByteArray>
+#include <QChar>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
+#include <QIODevice>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QTextStream>
+#include <QVariant>
+
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+#include <QCharRef>
+#endif
 
 // NOLINTNEXTLINE(performance-unnecessary-value-param) - used as callback so we need to preserve the signature
-static bool executeCommand(std::string exe, std::vector<std::string> args, std::string redirect, std::string *output)
+static int executeCommand(std::string exe, std::vector<std::string> args, std::string redirect, std::string &output) // cppcheck-suppress passedByValueCallback
 {
-    output->clear();
+    output.clear();
 
     QStringList args2;
     for (const std::string &arg: args)
@@ -60,31 +72,22 @@ static bool executeCommand(std::string exe, std::vector<std::string> args, std::
     if (redirect == "2>&1") {
         QString s1 = process.readAllStandardOutput();
         QString s2 = process.readAllStandardError();
-        *output = (s1 + "\n" + s2).toStdString();
+        output = (s1 + "\n" + s2).toStdString();
     } else
-        *output = process.readAllStandardOutput().toStdString();
+        output = process.readAllStandardOutput().toStdString();
 
-    if (redirect.compare(0,3,"2> ") == 0) {
+    if (startsWith(redirect, "2> ")) {
         std::ofstream fout(redirect.substr(3));
         fout << process.readAllStandardError().toStdString();
     }
-    return process.exitCode() == 0;
+    return process.exitCode();
 }
 
 
 CheckThread::CheckThread(ThreadResult &result) :
-    mState(Ready),
     mResult(result),
-    mCppcheck(result, true, executeCommand),
-    mAnalyseWholeProgram(false)
-{
-    //ctor
-}
-
-CheckThread::~CheckThread()
-{
-    //dtor
-}
+    mCppcheck(result, true, executeCommand)
+{}
 
 void CheckThread::check(const Settings &settings)
 {
@@ -108,10 +111,11 @@ void CheckThread::run()
     if (!mFiles.isEmpty() || mAnalyseWholeProgram) {
         mAnalyseWholeProgram = false;
         qDebug() << "Whole program analysis";
-        std::map<std::string,std::size_t> files2;
-        for (const QString& file : mFiles)
-            files2[file.toStdString()] = 0;
-        mCppcheck.analyseWholeProgram(mCppcheck.settings().buildDir, files2);
+        std::list<std::pair<std::string, std::size_t>> files2;
+        std::transform(mFiles.cbegin(), mFiles.cend(), std::back_inserter(files2), [&](const QString& file) {
+            return std::pair<std::string, std::size_t>{file.toStdString(), 0};
+        });
+        mCppcheck.analyseWholeProgram(mCppcheck.settings().buildDir, files2, {});
         mFiles.clear();
         emit done();
         return;
@@ -128,7 +132,7 @@ void CheckThread::run()
             file = mResult.getNextFile();
     }
 
-    ImportProject::FileSettings fileSettings = mResult.getNextFileSettings();
+    FileSettings fileSettings = mResult.getNextFileSettings();
     while (!fileSettings.filename.empty() && mState == Running) {
         file = QString::fromStdString(fileSettings.filename);
         qDebug() << "Checking file" << file;
@@ -148,14 +152,14 @@ void CheckThread::run()
     emit done();
 }
 
-void CheckThread::runAddonsAndTools(const ImportProject::FileSettings *fileSettings, const QString &fileName)
+void CheckThread::runAddonsAndTools(const FileSettings *fileSettings, const QString &fileName)
 {
     for (const QString& addon : mAddonsAndTools) {
         if (addon == CLANG_ANALYZER || addon == CLANG_TIDY) {
             if (!fileSettings)
                 continue;
 
-            if (!fileSettings->cfg.empty() && fileSettings->cfg.compare(0,5,"Debug") != 0)
+            if (!fileSettings->cfg.empty() && !startsWith(fileSettings->cfg,"Debug"))
                 continue;
 
             QStringList args;
@@ -173,7 +177,7 @@ void CheckThread::runAddonsAndTools(const ImportProject::FileSettings *fileSetti
             const QString clangPath = CheckThread::clangTidyCmd();
             if (!clangPath.isEmpty()) {
                 QDir dir(clangPath + "/../lib/clang");
-                for (QString ver : dir.entryList()) {
+                for (const QString& ver : dir.entryList()) {
                     QString includePath = dir.absolutePath() + '/' + ver + "/include";
                     if (ver[0] != '.' && QDir(includePath).exists()) {
                         args << "-isystem" << includePath;
@@ -345,9 +349,9 @@ void CheckThread::parseClangErrors(const QString &tool, const QString &file0, QS
         errorItem.errorPath.last().line = r1MatchRes.captured(2).toInt();
         errorItem.errorPath.last().column = r1MatchRes.captured(3).toInt();
         if (r1MatchRes.captured(4) == "warning")
-            errorItem.severity = Severity::SeverityType::warning;
+            errorItem.severity = Severity::warning;
         else if (r1MatchRes.captured(4) == "error" || r1MatchRes.captured(4) == "fatal error")
-            errorItem.severity = Severity::SeverityType::error;
+            errorItem.severity = Severity::error;
 
         QString message,id;
         const QRegularExpressionMatch r2MatchRes = r2.match(r1MatchRes.captured(5));
@@ -360,13 +364,13 @@ void CheckThread::parseClangErrors(const QString &tool, const QString &file0, QS
                 id = tool + '-' + r2MatchRes.captured(2);
             if (tool == CLANG_TIDY) {
                 if (id1.startsWith("performance"))
-                    errorItem.severity = Severity::SeverityType::performance;
+                    errorItem.severity = Severity::performance;
                 else if (id1.startsWith("portability"))
-                    errorItem.severity = Severity::SeverityType::portability;
+                    errorItem.severity = Severity::portability;
                 else if (id1.startsWith("misc") && !id1.contains("unused"))
-                    errorItem.severity = Severity::SeverityType::warning;
+                    errorItem.severity = Severity::warning;
                 else
-                    errorItem.severity = Severity::SeverityType::style;
+                    errorItem.severity = Severity::style;
             }
         } else {
             message = r1MatchRes.captured(5);

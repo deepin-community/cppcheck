@@ -26,6 +26,7 @@
 #include <map>
 #include <utility>
 
+#include <QList>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -51,6 +52,11 @@ public:
     ~ProjectFile() override {
         if (this == mActiveProject) mActiveProject = nullptr;
     }
+
+    enum class CheckLevel {
+        normal,
+        exhaustive
+    };
 
     static ProjectFile* getActiveProject() {
         return mActiveProject;
@@ -159,10 +165,18 @@ public:
 
     /**
      * @brief Get platform.
-     * @return Current platform. If it ends with .xml then it is a file. Otherwise it must match one of the return values from @sa cppcheck::Platform::platformString() ("win32A", "unix32", ..)
+     * @return Current platform. If it ends with .xml then it is a file. Otherwise it must match one of the return values from @sa cppcheck::Platform::toString() ("win32A", "unix32", ..)
      */
     QString getPlatform() const {
         return mPlatform;
+    }
+
+    QString getProjectName() const {
+        return mProjectName;
+    }
+
+    void setProjectName(QString projectName) {
+        mProjectName = std::move(projectName);
     }
 
     /**
@@ -320,6 +334,10 @@ public:
      */
     void setVSConfigurations(const QStringList &vsConfigs);
 
+    /** CheckLevel: normal/exhaustive */
+    void setCheckLevel(CheckLevel checkLevel);
+    bool isCheckLevelExhaustive() const;
+
     /**
      * @brief Set tags.
      * @param tags tag list
@@ -393,9 +411,11 @@ public:
     QStringList getCheckUnknownFunctionReturn() const {
         return mCheckUnknownFunctionReturn;
     }
-    void setCheckUnknownFunctionReturn(const QStringList &s) {
+    /*
+       void setCheckUnknownFunctionReturn(const QStringList &s) {
         mCheckUnknownFunctionReturn = s;
-    }
+       }
+     */
 
     /** Use Clang parser */
     bool clangParser;
@@ -406,7 +426,7 @@ protected:
      * @brief Read optional root path from XML.
      * @param reader XML stream reader.
      */
-    void readRootPath(QXmlStreamReader &reader);
+    void readRootPath(const QXmlStreamReader &reader);
 
     void readBuildDir(QXmlStreamReader &reader);
 
@@ -419,6 +439,8 @@ protected:
     static bool readBool(QXmlStreamReader &reader);
 
     static int readInt(QXmlStreamReader &reader, int defaultValue);
+
+    static QString readString(QXmlStreamReader &reader);
 
     /**
      * @brief Read list of include directories from XML.
@@ -574,13 +596,20 @@ private:
      */
     QStringList mAddons;
 
-    bool mBughunting;
+    bool mBughunting = false;
+
+    /** @brief Should Cppcheck run normal or exhaustive analysis? */
+    CheckLevel mCheckLevel = CheckLevel::normal;
 
     /**
      * @brief List of coding standards, checked by Cppcheck Premium.
      */
     QStringList mCodingStandards;
 
+    /** @brief Project name, used when generating compliance report */
+    QString mProjectName;
+
+    /** @brief Cppcheck Premium: This value is passed to the Cert C checker if that is enabled */
     int mCertIntPrecision;
 
     /** @brief Execute clang analyzer? */

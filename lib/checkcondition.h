@@ -26,13 +26,13 @@
 #include "config.h"
 #include "mathlib.h"
 #include "errortypes.h"
+#include "tokenize.h"
 
 #include <set>
 #include <string>
 
 class Settings;
 class Token;
-class Tokenizer;
 class ErrorLogger;
 class ValueType;
 
@@ -52,12 +52,13 @@ public:
     /** This constructor is used when registering the CheckAssignIf */
     CheckCondition() : Check(myName()) {}
 
+private:
     /** This constructor is used when running checks. */
     CheckCondition(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        CheckCondition checkCondition(tokenizer, settings, errorLogger);
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        CheckCondition checkCondition(&tokenizer, tokenizer.getSettings(), errorLogger);
         checkCondition.multiCondition();
         checkCondition.clarifyCondition();   // not simplified because ifAssign
         checkCondition.multiCondition2();
@@ -67,12 +68,12 @@ public:
         checkCondition.checkPointerAdditionResultNotNull();
         checkCondition.checkDuplicateConditionalAssign();
         checkCondition.assignIf();
-        checkCondition.alwaysTrueFalse();
         checkCondition.checkBadBitmaskCheck();
         checkCondition.comparison();
         checkCondition.checkModuloAlwaysTrueFalse();
         checkCondition.checkAssignmentInCondition();
         checkCondition.checkCompareValueOutOfTypeRange();
+        checkCondition.alwaysTrueFalse();
     }
 
     /** mismatching assignment / comparison */
@@ -128,7 +129,6 @@ public:
     /** @brief Assignment in condition */
     void checkAssignmentInCondition();
 
-private:
     // The conditions that have been diagnosed
     std::set<const Token*> mCondDiags;
     bool diag(const Token* tok, bool insert=true);

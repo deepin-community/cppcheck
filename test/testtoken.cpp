@@ -17,6 +17,7 @@
  */
 
 #include "settings.h"
+#include "errortypes.h"
 #include "fixture.h"
 #include "helpers.h"
 #include "token.h"
@@ -28,8 +29,6 @@
 #include <sstream> // IWYU pragma: keep
 #include <string>
 #include <vector>
-
-struct InternalError;
 
 
 class TestToken : public TestFixture {
@@ -107,6 +106,7 @@ private:
         TEST_CASE(canFindMatchingBracketsWithTooManyClosing);
         TEST_CASE(canFindMatchingBracketsWithTooManyOpening);
         TEST_CASE(findClosingBracket);
+        TEST_CASE(findClosingBracket2);
 
         TEST_CASE(expressionString);
 
@@ -136,7 +136,7 @@ private:
 
 #define MatchCheck(...) MatchCheck_(__FILE__, __LINE__, __VA_ARGS__)
     bool MatchCheck_(const char* file, int line, const std::string& code, const std::string& pattern, unsigned int varid = 0) {
-        static const Settings settings;
+        const Settings settings;
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(";" + code + ";");
         try {
@@ -396,7 +396,7 @@ private:
 
     void getStrSize() const {
         Token tok;
-        Settings settings;
+        const Settings settings;
 
         tok.str("\"\"");
         ASSERT_EQUALS(sizeof(""), Token::getStrSize(&tok, &settings));
@@ -482,7 +482,7 @@ private:
     }
 
     void deleteLast() const {
-        TokensFrontBack listEnds{ nullptr };
+        TokensFrontBack listEnds;
         Token ** const tokensBack = &(listEnds.back);
         Token tok(&listEnds);
         tok.insertToken("aba");
@@ -492,7 +492,7 @@ private:
     }
 
     void deleteFirst() const {
-        TokensFrontBack listEnds{ nullptr };
+        TokensFrontBack listEnds;
         Token ** const tokensFront = &(listEnds.front);
         Token tok(&listEnds);
 
@@ -638,8 +638,11 @@ private:
         givenACodeSampleToTokenize nonNumeric("abc", true);
         ASSERT_EQUALS(false, Token::Match(nonNumeric.tokens(), "%num%"));
 
-        givenACodeSampleToTokenize binary("101010b", true);
-        ASSERT_EQUALS(true, Token::Match(binary.tokens(), "%num%"));
+        givenACodeSampleToTokenize msLiteral("5ms", true); // #11438
+        ASSERT_EQUALS(false, Token::Match(msLiteral.tokens(), "%num%"));
+
+        givenACodeSampleToTokenize sLiteral("3s", true);
+        ASSERT_EQUALS(false, Token::Match(sLiteral.tokens(), "%num%"));
 
         givenACodeSampleToTokenize octal("0123", true);
         ASSERT_EQUALS(true, Token::Match(octal.tokens(), "%num%"));
@@ -652,9 +655,6 @@ private:
 
         givenACodeSampleToTokenize floatingPoint("0.0f", true);
         ASSERT_EQUALS(true, Token::Match(floatingPoint.tokens(), "%num%"));
-
-        givenACodeSampleToTokenize doublePrecision("0.0d", true);
-        ASSERT_EQUALS(true, Token::Match(doublePrecision.tokens(), "%num%"));
 
         givenACodeSampleToTokenize signedLong("0L", true);
         ASSERT_EQUALS(true, Token::Match(signedLong.tokens(), "%num%"));
@@ -1083,6 +1083,13 @@ private:
 
         const Token* const t = var.tokens()->next()->findClosingBracket();
         ASSERT(Token::simpleMatch(t, "> struct"));
+    }
+
+    void findClosingBracket2() const {
+        givenACodeSampleToTokenize var("const auto g = []<typename T>() {};\n"); // #11275
+
+        const Token* const t = Token::findsimplematch(var.tokens(), "<");
+        ASSERT(t && Token::simpleMatch(t->findClosingBracket(), ">"));
     }
 
     void expressionString() const {
