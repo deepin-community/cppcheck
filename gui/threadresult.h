@@ -22,16 +22,19 @@
 
 #include "color.h"
 #include "errorlogger.h"
-#include "importproject.h"
+#include "filesettings.h"
 
 #include <list>
+#include <mutex>
 #include <string>
 
-#include <QMutex>
 #include <QObject>
+#include <QString>
 #include <QStringList>
+#include <QtGlobal>
 
 class ErrorItem;
+class ImportProject;
 
 /// @addtogroup GUI
 /// @{
@@ -43,8 +46,7 @@ class ErrorItem;
 class ThreadResult : public QObject, public ErrorLogger {
     Q_OBJECT
 public:
-    ThreadResult();
-    ~ThreadResult() override;
+    ThreadResult() = default;
 
     /**
      * @brief Get next unprocessed file
@@ -52,7 +54,7 @@ public:
      */
     QString getNextFile();
 
-    ImportProject::FileSettings getNextFileSettings();
+    FileSettings getNextFileSettings();
 
     /**
      * @brief Set list of files to check
@@ -126,7 +128,7 @@ protected:
      * @brief Mutex
      *
      */
-    mutable QMutex mutex;
+    mutable std::mutex mutex;
 
     /**
      * @brief List of files to check
@@ -134,31 +136,31 @@ protected:
      */
     QStringList mFiles;
 
-    std::list<ImportProject::FileSettings> mFileSettings;
+    std::list<FileSettings> mFileSettings;
 
     /**
      * @brief Max progress
      *
      */
-    quint64 mMaxProgress;
+    quint64 mMaxProgress{};
 
     /**
      * @brief Current progress
      *
      */
-    quint64 mProgress;
+    quint64 mProgress{};
 
     /**
      * @brief Current number of files checked
      *
      */
-    unsigned long mFilesChecked;
+    unsigned long mFilesChecked{};
 
     /**
      * @brief Total number of files
      *
      */
-    unsigned long mTotalFiles;
+    unsigned long mTotalFiles{};
 };
 /// @}
 #endif // THREADRESULT_H

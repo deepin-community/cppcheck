@@ -27,13 +27,13 @@
 #include "errortypes.h"
 #include "library.h"
 #include "settings.h"
+#include "tokenize.h"
 
 #include <map>
 #include <string>
 #include <utility>
 
 class Token;
-class Tokenizer;
 class ErrorLogger;
 
 namespace ValueFlow {
@@ -53,13 +53,14 @@ public:
     /** This constructor is used when registering the CheckFunctions */
     CheckFunctions() : Check(myName()) {}
 
+private:
     /** This constructor is used when running checks. */
     CheckFunctions(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
         : Check(myName(), tokenizer, settings, errorLogger) {}
 
     /** @brief Run checks against the normal token list */
-    void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger) override {
-        CheckFunctions checkFunctions(tokenizer, settings, errorLogger);
+    void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger) override {
+        CheckFunctions checkFunctions(&tokenizer, tokenizer.getSettings(), errorLogger);
 
         checkFunctions.checkIgnoredReturnValue();
         checkFunctions.checkMissingReturn();  // Missing "return" in exit path
@@ -109,7 +110,6 @@ public:
     /** @brief --check-library: warn for unconfigured function calls */
     void checkLibraryMatchFunctions();
 
-private:
     /** @brief %Check for missing "return" */
     void checkMissingReturn();
 

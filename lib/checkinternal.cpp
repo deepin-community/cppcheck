@@ -25,8 +25,9 @@
 #include "token.h"
 #include "tokenize.h"
 
-#include <set>
 #include <cstring>
+#include <set>
+#include <vector>
 
 // Register this check class (by creating a static instance of it).
 // Disabled in release builds
@@ -61,7 +62,7 @@ void CheckInternal::checkTokenMatchPatterns()
             // Check for signs of complex patterns
             if (pattern.find_first_of("[|") != std::string::npos)
                 continue;
-            else if (pattern.find("!!") != std::string::npos)
+            if (pattern.find("!!") != std::string::npos)
                 continue;
 
             bool complex = false;
@@ -229,7 +230,7 @@ void CheckInternal::checkMissingPercentCharacter()
 
             std::set<std::string>::const_iterator knownPattern, knownPatternsEnd = knownPatterns.cend();
             for (knownPattern = knownPatterns.cbegin(); knownPattern != knownPatternsEnd; ++knownPattern) {
-                const std::string brokenPattern = (*knownPattern).substr(0, (*knownPattern).size() - 1);
+                const std::string brokenPattern = knownPattern->substr(0, knownPattern->size() - 1);
 
                 std::string::size_type pos = 0;
                 while ((pos = pattern.find(brokenPattern, pos)) != std::string::npos) {

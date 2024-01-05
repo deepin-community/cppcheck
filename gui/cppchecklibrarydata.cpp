@@ -18,17 +18,24 @@
 
 #include "cppchecklibrarydata.h"
 
+#include "utils.h"
+
 #include <stdexcept>
 #include <string>
 
-#include <QXmlStreamReader>
+#include <QObject>
 #include <QVariant>
+#include <QXmlStreamAttributes>
+#include <QXmlStreamReader>
+#include <QXmlStreamWriter>
+#include <QtGlobal>
+
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+#include <QStringRef>
+#endif
 
 const unsigned int CppcheckLibraryData::Function::Arg::ANY = ~0U;
 const unsigned int CppcheckLibraryData::Function::Arg::VARIADIC = ~1U;
-
-CppcheckLibraryData::CppcheckLibraryData()
-{}
 
 static std::string unhandledElement(const QXmlStreamReader &xmlReader)
 {
@@ -75,7 +82,7 @@ static CppcheckLibraryData::Container loadContainer(QXmlStreamReader &xmlReader)
                     break;
                 if (type != QXmlStreamReader::StartElement)
                     continue;
-                struct CppcheckLibraryData::Container::Function function;
+                CppcheckLibraryData::Container::Function function;
                 function.name   = xmlReader.attributes().value("name").toString();
                 function.action = xmlReader.attributes().value("action").toString();
                 function.yields = xmlReader.attributes().value("yields").toString();
@@ -84,7 +91,7 @@ static CppcheckLibraryData::Container loadContainer(QXmlStreamReader &xmlReader)
                 else if (elementName == "access")
                     container.accessFunctions.append(function);
                 else if (elementName == "rangeItemRecordType") {
-                    struct CppcheckLibraryData::Container::RangeItemRecordType rangeItemRecordType;
+                    CppcheckLibraryData::Container::RangeItemRecordType rangeItemRecordType;
                     rangeItemRecordType.name = xmlReader.attributes().value("name").toString();
                     rangeItemRecordType.templateParameter = xmlReader.attributes().value("templateParameter").toString();
                     container.rangeItemRecordTypeList.append(rangeItemRecordType);
@@ -365,12 +372,12 @@ static CppcheckLibraryData::Markup loadMarkup(QXmlStreamReader &xmlReader)
         mandatoryAttibuteMissing(xmlReader, "ext");
     }
     if (xmlReader.attributes().hasAttribute("aftercode")) {
-        markup.afterCode = (xmlReader.attributes().value("aftercode") == QString("true")) ? true : false;
+        markup.afterCode = (xmlReader.attributes().value("aftercode") == QString("true"));
     } else {
         mandatoryAttibuteMissing(xmlReader, "aftercode");
     }
     if (xmlReader.attributes().hasAttribute("reporterrors")) {
-        markup.reportErrors = (xmlReader.attributes().value("reporterrors") == QString("true")) ? true : false;
+        markup.reportErrors = (xmlReader.attributes().value("reporterrors") == QString("true"));
     } else {
         mandatoryAttibuteMissing(xmlReader, "reporterrors");
     }
@@ -446,7 +453,7 @@ static CppcheckLibraryData::Markup loadMarkup(QXmlStreamReader &xmlReader)
     return markup;
 }
 
-static CppcheckLibraryData::Entrypoint loadEntrypoint(QXmlStreamReader &xmlReader)
+static CppcheckLibraryData::Entrypoint loadEntrypoint(const QXmlStreamReader &xmlReader)
 {
     CppcheckLibraryData::Entrypoint entrypoint;
     entrypoint.name = xmlReader.attributes().value("name").toString();
@@ -506,14 +513,12 @@ QString CppcheckLibraryData::open(QIODevice &file)
             break;
         }
     }
-    if (xmlReader.hasError()) {
+    if (xmlReader.hasError())
         return xmlReader.errorString();
-    } else {
-        return QString();
-    }
+    return QString();
 }
 
-static void writeContainerFunctions(QXmlStreamWriter &xmlWriter, const QString &name, int extra, const QList<struct CppcheckLibraryData::Container::Function> &functions)
+static void writeContainerFunctions(QXmlStreamWriter &xmlWriter, const QString &name, int extra, const QList<CppcheckLibraryData::Container::Function> &functions)
 {
     if (functions.isEmpty() && extra < 0)
         return;
@@ -536,7 +541,7 @@ static void writeContainerFunctions(QXmlStreamWriter &xmlWriter, const QString &
     xmlWriter.writeEndElement();
 }
 
-static void writeContainerRangeItemRecords(QXmlStreamWriter &xmlWriter, const QList<struct CppcheckLibraryData::Container::RangeItemRecordType> &rangeItemRecords)
+static void writeContainerRangeItemRecords(QXmlStreamWriter &xmlWriter, const QList<CppcheckLibraryData::Container::RangeItemRecordType> &rangeItemRecords)
 {
     if (rangeItemRecords.isEmpty())
         return;
@@ -612,7 +617,7 @@ static void writeFunction(QXmlStreamWriter &xmlWriter, const CppcheckLibraryData
         xmlWriter.writeEndElement();
     }
     if (function.noreturn != CppcheckLibraryData::Function::Unknown)
-        xmlWriter.writeTextElement("noreturn", (function.noreturn == CppcheckLibraryData::Function::True) ? "true" : "false");
+        xmlWriter.writeTextElement("noreturn", bool_to_string(function.noreturn == CppcheckLibraryData::Function::True));
     if (function.leakignore)
         xmlWriter.writeEmptyElement("leak-ignore");
     // Argument info..
@@ -692,14 +697,14 @@ static void writeFunction(QXmlStreamWriter &xmlWriter, const CppcheckLibraryData
     }
     if (!function.notOverlappingDataArgs.isEmpty()) {
         xmlWriter.writeStartElement("not-overlapping-data");
-        foreach (const QString value, function.notOverlappingDataArgs) {
+        foreach (const QString& value, function.notOverlappingDataArgs) {
             xmlWriter.writeAttribute(function.notOverlappingDataArgs.key(value), value);
         }
         xmlWriter.writeEndElement();
     }
     if (!function.containerAttributes.isEmpty()) {
         xmlWriter.writeStartElement("container");
-        foreach (const QString value, function.containerAttributes) {
+        foreach (const QString& value, function.containerAttributes) {
             xmlWriter.writeAttribute(function.containerAttributes.key(value), value);
         }
         xmlWriter.writeEndElement();
@@ -716,7 +721,7 @@ static void writeMemoryResource(QXmlStreamWriter &xmlWriter, const CppcheckLibra
         } else {
             xmlWriter.writeStartElement("alloc");
         }
-        xmlWriter.writeAttribute("init", alloc.init ? "true" : "false");
+        xmlWriter.writeAttribute("init", bool_to_string(alloc.init));
         if (alloc.arg != -1) {
             xmlWriter.writeAttribute("arg", QString("%1").arg(alloc.arg));
         }

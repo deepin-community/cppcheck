@@ -19,16 +19,18 @@
 #ifndef THREADEXECUTOR_H
 #define THREADEXECUTOR_H
 
-#include "config.h"
-
+#include "cppcheck.h"
 #include "executor.h"
 
 #include <cstddef>
-#include <map>
+#include <list>
 #include <string>
+#include <utility>
 
 class Settings;
 class ErrorLogger;
+class Suppressions;
+struct FileSettings;
 
 /// @addtogroup CLI
 /// @{
@@ -38,17 +40,16 @@ class ErrorLogger;
  * all files using threads.
  */
 class ThreadExecutor : public Executor {
+    friend class SyncLogForwarder;
+
 public:
-    ThreadExecutor(const std::map<std::string, std::size_t> &files, Settings &settings, ErrorLogger &errorLogger);
+    ThreadExecutor(const std::list<std::pair<std::string, std::size_t>> &files, const std::list<FileSettings>& fileSettings, const Settings &settings, Suppressions &suppressions, ErrorLogger &errorLogger, CppCheck::ExecuteCmdFn executeCommand);
     ThreadExecutor(const ThreadExecutor &) = delete;
-    ~ThreadExecutor() override;
     void operator=(const ThreadExecutor &) = delete;
 
     unsigned int check() override;
 
-private:
-    class SyncLogForwarder;
-    static unsigned int STDCALL threadProc(SyncLogForwarder *logForwarder);
+    CppCheck::ExecuteCmdFn mExecuteCommand;
 };
 
 /// @}

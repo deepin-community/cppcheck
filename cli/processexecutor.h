@@ -19,14 +19,18 @@
 #ifndef PROCESSEXECUTOR_H
 #define PROCESSEXECUTOR_H
 
+#include "cppcheck.h"
 #include "executor.h"
 
 #include <cstddef>
-#include <map>
+#include <list>
 #include <string>
+#include <utility>
 
 class Settings;
 class ErrorLogger;
+class Suppressions;
+struct FileSettings;
 
 /// @addtogroup CLI
 /// @{
@@ -37,9 +41,8 @@ class ErrorLogger;
  */
 class ProcessExecutor : public Executor {
 public:
-    ProcessExecutor(const std::map<std::string, std::size_t> &files, Settings &settings, ErrorLogger &errorLogger);
+    ProcessExecutor(const std::list<std::pair<std::string, std::size_t>> &files, const std::list<FileSettings>& fileSettings, const Settings &settings, Suppressions &suppressions, ErrorLogger &errorLogger, CppCheck::ExecuteCmdFn executeCommand);
     ProcessExecutor(const ProcessExecutor &) = delete;
-    ~ProcessExecutor() override;
     void operator=(const ProcessExecutor &) = delete;
 
     unsigned int check() override;
@@ -47,11 +50,9 @@ public:
 private:
     /**
      * Read from the pipe, parse and handle what ever is in there.
-     *@return -1 in case of error
-     *         0 if there is nothing in the pipe to be read
-     *         1 if we did read something
+     * @return False in case of an recoverable error - will exit process on others
      */
-    int handleRead(int rpipe, unsigned int &result);
+    bool handleRead(int rpipe, unsigned int &result, const std::string& filename);
 
     /**
      * @brief Check load average condition
@@ -65,6 +66,8 @@ private:
      * @param msg The error message
      */
     void reportInternalChildErr(const std::string &childname, const std::string &msg);
+
+    CppCheck::ExecuteCmdFn mExecuteCommand;
 };
 
 /// @}

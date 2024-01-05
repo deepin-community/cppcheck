@@ -18,37 +18,23 @@
 
 #include "checkfunctions.h"
 #include "errortypes.h"
-#include "library.h"
 #include "settings.h"
 #include "standards.h"
 #include "fixture.h"
 #include "tokenize.h"
 
-#include <list>
 #include <sstream> // IWYU pragma: keep
 #include <string>
-
-#include <tinyxml2.h>
 
 class TestFunctions : public TestFixture {
 public:
     TestFunctions() : TestFixture("TestFunctions") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().severity(Severity::style).severity(Severity::warning).severity(Severity::performance).severity(Severity::portability).
+                              certainty(Certainty::inconclusive).c(Standards::C11).cpp(Standards::CPP11).library("std.cfg").library("posix.cfg").build();
 
     void run() override {
-        settings.severity.enable(Severity::style);
-        settings.severity.enable(Severity::warning);
-        settings.severity.enable(Severity::performance);
-        settings.severity.enable(Severity::portability);
-        settings.certainty.enable(Certainty::inconclusive);
-        settings.libraries.emplace_back("posix");
-        settings.standards.c = Standards::C11;
-        settings.standards.cpp = Standards::CPP11;
-        LOAD_LIB_2(settings.library, "std.cfg");
-        LOAD_LIB_2(settings.library, "posix.cfg");
-
         // Prohibited functions
         TEST_CASE(prohibitedFunctions_posix);
         TEST_CASE(prohibitedFunctions_index);
@@ -131,8 +117,17 @@ private:
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
 
-        CheckFunctions checkFunctions(&tokenizer, settings_, this);
-        checkFunctions.runChecks(&tokenizer, settings_, this);
+        // filter out ValueFlow messages..
+        const std::string debugwarnings = errout.str();
+        errout.str("");
+        std::istringstream istr2(debugwarnings);
+        std::string errline;
+        while (std::getline(istr2, errline)) {
+            if (errline.find("valueflow.cpp") == std::string::npos)
+                errout << errline << "\n";
+        }
+
+        runChecks<CheckFunctions>(tokenizer, this);
     }
 
     void prohibitedFunctions_posix() {
@@ -275,27 +270,24 @@ private:
               "}", "test.c");
         ASSERT_EQUALS("[test.c:3]: (warning) Obsolete function 'alloca' called. In C99 and later it is recommended to use a variable length array instead.\n", errout.str());
 
-        settings.standards.c = Standards::C89;
-        settings.standards.cpp = Standards::CPP03;
+        const Settings s = settingsBuilder(settings).c(Standards::C89).cpp(Standards::CPP03).build();
         check("void f()\n"
               "{\n"
               "    char *x = alloca(10);\n"
-              "}", "test.cpp");  // #4382 - there are no VLAs in C++
+              "}", "test.cpp", &s);  // #4382 - there are no VLAs in C++
         ASSERT_EQUALS("", errout.str());
 
         check("void f()\n"
               "{\n"
               "    char *x = alloca(10);\n"
-              "}", "test.c"); // #7558 - no alternative to alloca in C89
+              "}", "test.c", &s); // #7558 - no alternative to alloca in C89
         ASSERT_EQUALS("", errout.str());
 
         check("void f()\n"
               "{\n"
               "    char *x = alloca(10);\n"
-              "}", "test.c");
+              "}", "test.c", &s);
         ASSERT_EQUALS("", errout.str());
-        settings.standards.c = Standards::C11;
-        settings.standards.cpp = Standards::CPP11;
     }
 
     // ticket #3121
@@ -1304,19 +1296,15 @@ private:
     }
 
     void checkIgnoredReturnValue() {
-        Settings settings2;
-        settings2.severity.enable(Severity::warning);
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def version=\"2\">\n"
-                               "  <function name=\"mystrcmp,foo::mystrcmp\">\n"
-                               "    <use-retval/>\n"
-                               "    <arg nr=\"1\"/>\n"
-                               "    <arg nr=\"2\"/>\n"
-                               "  </function>\n"
-                               "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
-        settings2.library.load(doc);
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def version=\"2\">\n"
+                                   "  <function name=\"mystrcmp,foo::mystrcmp\">\n"
+                                   "    <use-retval/>\n"
+                                   "    <arg nr=\"1\"/>\n"
+                                   "    <arg nr=\"2\"/>\n"
+                                   "  </function>\n"
+                                   "</def>";
+        const Settings settings2 = settingsBuilder().severity(Severity::warning).libraryxml(xmldata, sizeof(xmldata)).build();
 
         check("void foo() {\n"
               "  mystrcmp(a, b);\n"
@@ -1452,11 +1440,13 @@ private:
               "}", "test.cpp", &settings2);
         ASSERT_EQUALS("[test.cpp:2]: (warning) Return value of function mystrcmp() is not used.\n", errout.str());
 
+        check("void f(std::vector<int*> v) {\n"
+              "    delete *v.begin();\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void checkIgnoredErrorCode() {
-        Settings settings2;
-        settings2.addEnabled("style");
         const char xmldata[] = "<?xml version=\"1.0\"?>\n"
                                "<def version=\"2\">\n"
                                "  <function name=\"mystrcmp\">\n"
@@ -1465,9 +1455,7 @@ private:
                                "    <arg nr=\"2\"/>\n"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
-        settings2.library.load(doc);
+        const Settings settings2 = settingsBuilder().severity(Severity::style).libraryxml(xmldata, sizeof(xmldata)).build();
 
         check("void foo() {\n"
               "  mystrcmp(a, b);\n"
@@ -1574,18 +1562,21 @@ private:
 
         {
             const char code[] = "int main(void) {}";
-            Settings s;
+            {
+                const Settings s = settingsBuilder().c(Standards::C89).build();
 
-            s.standards.c = Standards::C89;
-            check(code, "test.c", &s); // c code (c89)
-            ASSERT_EQUALS("[test.c:1]: (error) Found an exit path from function with non-void return type that has missing return statement\n", errout.str());
+                check(code, "test.c", &s); // c code (c89)
+                ASSERT_EQUALS("[test.c:1]: (error) Found an exit path from function with non-void return type that has missing return statement\n", errout.str());
+            }
 
-            s.standards.c = Standards::C99;
-            check(code, "test.c", &s); // c code (c99)
-            ASSERT_EQUALS("", errout.str());
+            {
+                const Settings s = settingsBuilder().c(Standards::C99).build();
+                check(code, "test.c", &s); // c code (c99)
+                ASSERT_EQUALS("", errout.str());
 
-            check(code, "test.cpp", &s); // c++ code
-            ASSERT_EQUALS("", errout.str());
+                check(code, "test.cpp", &s); // c++ code
+                ASSERT_EQUALS("", errout.str());
+            }
         }
 
         check("F(A,B) { x=1; }");
@@ -1761,6 +1752,16 @@ private:
 
         check("template<class T> typename std::enable_if<std::is_same<T, int>{}>::type f(T) {}");
         ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n"
+              "     [[noreturn]] void f();\n"
+              "     int g() { this->f(); }\n"
+              "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S { [[noreturn]] void f(); };\n"
+              "int g(S& s) { s.f(); }\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     // NRVO check
@@ -1807,6 +1808,12 @@ private:
               "    std::cout << p->msg;\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        check("std::string&& f() {\n" // #11881
+              "    std::string s;\n"
+              "    return std::move(s);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void negativeMemoryAllocationSizeError() { // #389
@@ -1827,17 +1834,17 @@ private:
     }
 
     void checkLibraryMatchFunctions() {
-        const auto settings_old = settings;
-        settings.checkLibrary = true;
+        Settings s = settingsBuilder(settings).checkLibrary().debugwarnings().build();
+        s.daca = true;
 
         check("void f() {\n"
               "    lib_func();"
-              "}");
-        ASSERT_EQUALS("", errout.str());
+              "}", "test.cpp", &s);
+        ASSERT_EQUALS("[test.cpp:2]: (information) --check-library: There is no matching configuration for function lib_func()\n", errout.str());
 
         check("void f(void* v) {\n"
               "    lib_func(v);"
-              "}");
+              "}", "test.cpp", &s);
         ASSERT_EQUALS("[test.cpp:2]: (information) --check-library: There is no matching configuration for function lib_func()\n", errout.str());
 
         // #10105
@@ -1853,7 +1860,7 @@ private:
               "\n"
               "        void testFunctionReturnType() {\n"
               "        }\n"
-              "};");
+              "};", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         // #11183
@@ -1863,7 +1870,7 @@ private:
               "\n"
               "void f() {\n"
               "    cb(std::string(\"\"));\n"
-              "}");
+              "}", "test.cpp", &s);
         TODO_ASSERT_EQUALS("", "[test.cpp:6]: (information) --check-library: There is no matching configuration for function cb()\n", errout.str());
 
         // #7375
@@ -1871,38 +1878,38 @@ private:
               "    struct S { int i; char c; };\n"
               "    size_t s = sizeof(S);\n"
               "    static_assert(s == 9);\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         check("void f(char) {}\n"
               "void g() {\n"
               "    f(int8_t(1));\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         check("void f(std::uint64_t& u) {\n"
               "    u = std::uint32_t(u) * std::uint64_t(100);\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
-        check("void f() { throw(1); }\n"); // #8958
+        check("void f() { throw(1); }\n", "test.cpp", &s); // #8958
         ASSERT_EQUALS("", errout.str());
 
         check("using namespace std;\n"
-              "void f() { throw range_error(\"abc\"); }\n");
+              "void f() { throw range_error(\"abc\"); }\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         check("class C {\n" // #9002
               "public:\n"
               "    static int f() { return 1; }\n"
               "};\n"
-              "void g() { C::f(); }\n");
+              "void g() { C::f(); }\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         check("void f(const std::vector<std::string>& v) {\n" // #11223
               "    for (const auto& s : v)\n"
               "        s.find(\"\");\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("[test.cpp:3]: (warning) Return value of function s.find() is not used.\n", errout.str());
 
         check("void f() {\n"
@@ -1912,19 +1919,19 @@ private:
               "    q->push_back(1);\n"
               "    auto* r = new std::vector<int>;\n"
               "    r->push_back(1);\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         check("void f() {\n"
               "    auto p = std::make_shared<std::vector<int>>();\n"
               "    p->push_back(1);\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         check("void f(std::vector<std::vector<int>>& v) {\n"
               "    auto it = v.begin();\n"
               "    it->push_back(1);\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
 
         check("void f() {\n"
@@ -1934,23 +1941,103 @@ private:
               "    w.push_back(1);\n"
               "    auto x = std::vector<int>(1);\n"
               "    x.push_back(1);\n"
-              "}\n");
-        TODO_ASSERT_EQUALS("",
-                           "[test.cpp:7]: (information) --check-library: There is no matching configuration for function auto::push_back()\n",
-                           errout.str());
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
 
         check("void f() {\n"
               "    auto p(std::make_shared<std::vector<int>>());\n"
               "    p->push_back(1);\n"
               "    auto q{ std::make_shared<std::vector<int>>{} };\n"
               "    q->push_back(1);\n"
-              "}\n");
+              "}\n", "test.cpp", &s);
         TODO_ASSERT_EQUALS("",
+                           "[test.cpp:2]: (debug) auto token with no type.\n"
+                           "[test.cpp:4]: (debug) auto token with no type.\n"
                            "[test.cpp:3]: (information) --check-library: There is no matching configuration for function auto::push_back()\n"
                            "[test.cpp:5]: (information) --check-library: There is no matching configuration for function auto::push_back()\n",
                            errout.str());
 
-        settings = settings_old;
+        check("struct F { void g(int); };\n"
+              "void f(std::list<F>& l) {\n"
+              "    std::list<F>::iterator it;\n"
+              "    for (it = l.begin(); it != l.end(); ++it)\n"
+              "        it->g(0);\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("auto f() {\n"
+              "    return std::runtime_error(\"abc\");\n"
+              "}\n", "test.cpp", &s);
+        TODO_ASSERT_EQUALS("",
+                           "[test.cpp:1]: (debug) auto token with no type.\n",
+                           errout.str());
+
+        check("struct S {\n" // #11543
+              "    S() {}\n"
+              "    std::vector<std::shared_ptr<S>> v;\n"
+              "    void f(int i) const;\n"
+              "};\n"
+              "void S::f(int i) const {\n"
+              "    for (const std::shared_ptr<S>& c : v)\n"
+              "        c->f(i);\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("namespace N {\n"
+              "    struct S { static const std::set<std::string> s; };\n"
+              "}\n"
+              "void f() {\n"
+              "    const auto& t = N::S::s;\n"
+              "    if (t.find(\"abc\") != t.end()) {}\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::vector<std::unordered_map<int, std::unordered_set<int>>>& v, int i, int j) {\n"
+              "    auto& s = v[i][j];\n"
+              "    s.insert(0);\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("int f(const std::vector<std::string>& v, int i, char c) {\n"
+              "    const auto& s = v[i];\n"
+              "    return s.find(c);\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n" // #11604
+              "    int (*g)() = nullptr;\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    INT (*g)() = nullptr;\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct T;\n"
+              "std::shared_ptr<T> get();\n"
+              "void f(int i) {\n"
+              "    auto p = get();\n"
+              "    p->h(i);\n"
+              "    p.reset(nullptr);\n"
+              "}\n", "test.cpp", &s);
+        ASSERT_EQUALS("[test.cpp:5]: (information) --check-library: There is no matching configuration for function T::h()\n",
+                      errout.str());
+
+        check("struct S : std::vector<int> {\n"
+              "    void f(int i) { push_back(i); }\n"
+              "};\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    auto g = []() -> std::string { return \"abc\"; };\n"
+              "    auto s = g();\n"
+              "    if (s.at(0)) {}\n"
+              "    auto h{ []() -> std::string { return \"xyz\"; } };\n"
+              "    auto t = h();\n"
+              "    if (t.at(0)) {}\n"
+              "};\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void checkUseStandardLibrary1() {

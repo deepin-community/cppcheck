@@ -18,9 +18,16 @@
 
 #include "testprojectfile.h"
 
+#include "addoninfo.h"
+#include "importproject.h"
+#include "platform.h"
 #include "projectfile.h"
 #include "settings.h"
 
+#include <string>
+
+#include <QList>
+#include <QStringList>
 #include <QtTest>
 
 // Mock...
@@ -29,10 +36,8 @@ const char Settings::SafeChecks::XmlClasses[] = "class-public";
 const char Settings::SafeChecks::XmlExternalFunctions[] = "external-functions";
 const char Settings::SafeChecks::XmlInternalFunctions[] = "internal-functions";
 const char Settings::SafeChecks::XmlExternalVariables[] = "external-variables";
-Settings::Settings() : maxCtuDepth(10), maxTemplateRecursion(100) {}
-cppcheck::Platform::Platform() {}
-Library::Library() {}
-ImportProject::ImportProject() {}
+Settings::Settings() : maxCtuDepth(10) {}
+Platform::Platform() = default;
 bool ImportProject::sourceFileExists(const std::string & /*file*/) {
     return true;
 }

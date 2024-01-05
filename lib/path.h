@@ -105,6 +105,12 @@ public:
     static std::string getCurrentPath();
 
     /**
+     * @brief Returns the absolute path to the current executable
+     * @return absolute path to the current executable
+     */
+    static std::string getCurrentExecutablePath(const char* fallback);
+
+    /**
      * @brief Check if given path is absolute
      * @param path Path to check
      * @return true if given path is absolute
@@ -175,16 +181,23 @@ public:
     static std::string stripDirectoryPart(const std::string &file);
 
     /**
-     * @brief Checks if a File exists
-     * @param file Path to be checked if it is a File
-     * @return true if given path is a File
+     * @brief Checks if given path is a file
+     * @param path Path to be checked
+     * @return true if given path is a file
      */
-    static bool fileExists(const std::string &file);
+    static bool isFile(const std::string &path);
+
+    /**
+     * @brief Checks if a given path is a directory
+     * @param path Path to be checked
+     * @return true if given path is a directory
+     */
+    static bool isDirectory(const std::string &path);
 
     /**
      * join 2 paths with '/' separators
      */
-    static std::string join(std::string path1, std::string path2);
+    static std::string join(const std::string& path1, const std::string& path2);
 };
 
 /// @}

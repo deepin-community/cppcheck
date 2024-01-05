@@ -21,10 +21,16 @@
 #include "report.h"
 
 #include <QFile>
+#include <QIODevice>
+#include <QXmlStreamAttributes>
 #include <QXmlStreamReader>
 
-static const char ResultElementName[] = "results";
-static const char VersionAttribute[] = "version";
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+#include <QStringRef>
+#endif
+
+static constexpr char ResultElementName[] = "results";
+static constexpr char VersionAttribute[] = "version";
 
 XmlReport::XmlReport(const QString &filename) :
     Report(filename)
@@ -69,8 +75,8 @@ int XmlReport::determineVersion(const QString &filename)
                 if (attribs.hasAttribute(QString(VersionAttribute))) {
                     const int ver = attribs.value(QString(), VersionAttribute).toString().toInt();
                     return ver;
-                } else
-                    return 1;
+                }
+                return 1;
             }
             break;
 

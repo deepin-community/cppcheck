@@ -20,23 +20,20 @@
 #include "cppcheck.h"
 #include "errorlogger.h"
 #include "errortypes.h"
-#include "suppressions.h"
 #include "fixture.h"
 
-#include <iosfwd>
 #include <list>
-#include <memory>
 #include <string>
 
-#include <tinyxml2.h>
+#include "xml.h"
 
 class TestErrorLogger : public TestFixture {
 public:
-    TestErrorLogger() : TestFixture("TestErrorLogger"), fooCpp5("foo.cpp", 5, 1), barCpp8("bar.cpp", 8, 1) {}
+    TestErrorLogger() : TestFixture("TestErrorLogger") {}
 
 private:
-    const ErrorMessage::FileLocation fooCpp5;
-    const ErrorMessage::FileLocation barCpp8;
+    const ErrorMessage::FileLocation fooCpp5{"foo.cpp", 5, 1};
+    const ErrorMessage::FileLocation barCpp8{"bar.cpp", 8, 1};
 
     void run() override {
         TEST_CASE(PatternSearchReplace);
@@ -46,6 +43,7 @@ private:
         TEST_CASE(ErrorMessageConstructLocations);
         TEST_CASE(ErrorMessageVerbose);
         TEST_CASE(ErrorMessageVerboseLocations);
+        TEST_CASE(ErrorMessageFromInternalError);
         TEST_CASE(CustomFormat);
         TEST_CASE(CustomFormat2);
         TEST_CASE(CustomFormatLocations);
@@ -63,7 +61,8 @@ private:
         TEST_CASE(SerializeSanitize);
         TEST_CASE(SerializeFileLocation);
 
-        TEST_CASE(suppressUnmatchedSuppressions);
+        TEST_CASE(substituteTemplateFormatStatic);
+        TEST_CASE(substituteTemplateLocationStatic);
     }
 
     void TestPatternSearchReplace(const std::string& idPlaceholder, const std::string& id) const {
@@ -152,6 +151,36 @@ private:
         ASSERT_EQUALS("Verbose error", msg.verboseMessage());
         ASSERT_EQUALS("[foo.cpp:5] -> [bar.cpp:8]: (error) Programming error.", msg.toString(false));
         ASSERT_EQUALS("[foo.cpp:5] -> [bar.cpp:8]: (error) Verbose error", msg.toString(true));
+    }
+
+    void ErrorMessageFromInternalError() const {
+        // TODO: test with token
+        {
+            InternalError internalError(nullptr, "message", InternalError::INTERNAL);
+            const auto msg = ErrorMessage::fromInternalError(internalError, nullptr, "file.c");
+            ASSERT_EQUALS(1, msg.callStack.size());
+            const auto &loc = *msg.callStack.cbegin();
+            ASSERT_EQUALS(0, loc.fileIndex);
+            ASSERT_EQUALS(0, loc.line);
+            ASSERT_EQUALS(0, loc.column);
+            ASSERT_EQUALS("message", msg.shortMessage());
+            ASSERT_EQUALS("message", msg.verboseMessage());
+            ASSERT_EQUALS("[file.c:0]: (error) message", msg.toString(false));
+            ASSERT_EQUALS("[file.c:0]: (error) message", msg.toString(true));
+        }
+        {
+            InternalError internalError(nullptr, "message", "details", InternalError::INTERNAL);
+            const auto msg = ErrorMessage::fromInternalError(internalError, nullptr, "file.cpp", "msg");
+            ASSERT_EQUALS(1, msg.callStack.size());
+            const auto &loc = *msg.callStack.cbegin();
+            ASSERT_EQUALS(0, loc.fileIndex);
+            ASSERT_EQUALS(0, loc.line);
+            ASSERT_EQUALS(0, loc.column);
+            ASSERT_EQUALS("msg: message", msg.shortMessage());
+            ASSERT_EQUALS("msg: message: details", msg.verboseMessage());
+            ASSERT_EQUALS("[file.cpp:0]: (error) msg: message", msg.toString(false));
+            ASSERT_EQUALS("[file.cpp:0]: (error) msg: message: details", msg.toString(true));
+        }
     }
 
     void CustomFormat() const {
@@ -249,10 +278,10 @@ private:
                                "  <location file=\"foo.cpp\" line=\"5\" column=\"2\"/>\n"
                                "</error>";
         tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
+        ASSERT(doc.Parse(xmldata, sizeof(xmldata)) == tinyxml2::XML_SUCCESS);
         ErrorMessage msg(doc.FirstChildElement());
         ASSERT_EQUALS("errorId", msg.id);
-        ASSERT_EQUALS(Severity::error, msg.severity);
+        ASSERT_EQUALS(static_cast<int>(Severity::error), static_cast<int>(msg.severity));
         ASSERT_EQUALS(123u, msg.cwe.id);
         ASSERT_EQUALS(static_cast<int>(Certainty::inconclusive), static_cast<int>(msg.certainty));
         ASSERT_EQUALS("Programming error.", msg.shortMessage());
@@ -301,7 +330,7 @@ private:
         ErrorMessage msg2;
         ASSERT_NO_THROW(msg2.deserialize(msg_str));
         ASSERT_EQUALS("errorId", msg2.id);
-        ASSERT_EQUALS(Severity::error, msg2.severity);
+        ASSERT_EQUALS(static_cast<int>(Severity::error), static_cast<int>(msg2.severity));
         ASSERT_EQUALS("test.cpp", msg2.file0);
         ASSERT_EQUALS(static_cast<int>(Certainty::inconclusive), static_cast<int>(msg2.certainty));
         ASSERT_EQUALS("Programming error", msg2.shortMessage());
@@ -334,27 +363,27 @@ private:
             // invalid CWE ID
             const char str[] = "7 errorId"
                                "5 error"
-                               "7 invalid"
+                               "7 invalid" // cwe
                                "1 0"
                                "8 test.cpp"
                                "17 Programming error"
                                "17 Programming error"
                                "0 ";
             ErrorMessage msg;
-            ASSERT_THROW_EQUALS(msg.deserialize(str), InternalError, "Internal Error: Deserialization of error message failed - invalid CWE ID");
+            ASSERT_THROW_EQUALS(msg.deserialize(str), InternalError, "Internal Error: Deserialization of error message failed - invalid CWE ID - not an integer");
         }
         {
             // invalid hash
             const char str[] = "7 errorId"
                                "5 error"
                                "1 0"
-                               "7 invalid"
+                               "7 invalid" // hash
                                "8 test.cpp"
                                "17 Programming error"
                                "17 Programming error"
                                "0 ";
             ErrorMessage msg;
-            ASSERT_THROW_EQUALS(msg.deserialize(str), InternalError, "Internal Error: Deserialization of error message failed - invalid hash");
+            ASSERT_THROW_EQUALS(msg.deserialize(str), InternalError, "Internal Error: Deserialization of error message failed - invalid hash - not an integer");
         }
         {
             // out-of-range CWE ID
@@ -389,7 +418,7 @@ private:
         ErrorMessage msg2;
         ASSERT_NO_THROW(msg2.deserialize(msg_str));
         ASSERT_EQUALS("errorId", msg2.id);
-        ASSERT_EQUALS(Severity::error, msg2.severity);
+        ASSERT_EQUALS(static_cast<int>(Severity::error), static_cast<int>(msg2.severity));
         ASSERT_EQUALS("1.c", msg2.file0);
         ASSERT_EQUALS("Illegal character in \"foo\\001bar\"", msg2.shortMessage());
         ASSERT_EQUALS("Illegal character in \"foo\\001bar\"", msg2.verboseMessage());
@@ -425,62 +454,67 @@ private:
         ASSERT_EQUALS("abcd:/,", msg2.callStack.front().getinfo());
     }
 
-    void suppressUnmatchedSuppressions() {
-        std::list<Suppressions::Suppression> suppressions;
+    void substituteTemplateFormatStatic() const
+    {
+        {
+            std::string s;
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("", s);
+        }
+        {
+            std::string s = "template{black}\\z";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("template{black}\\z", s);
+        }
+        {
+            std::string s = "{reset}{bold}{dim}{red}{blue}{magenta}{default}\\b\\n\\r\\t";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("\b\n\r\t", s);
+        }
+        {
+            std::string s = "\\\\n";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("\\\n", s);
+        }
+        {
+            std::string s = "{{red}";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("{", s);
+        }
+    }
 
-        // No unmatched suppression
-        errout.str("");
-        suppressions.clear();
-        reportUnmatchedSuppressions(suppressions);
-        ASSERT_EQUALS("", errout.str());
-
-        // suppress all unmatchedSuppression
-        errout.str("");
-        suppressions.clear();
-        suppressions.emplace_back("abc", "a.c", 10U);
-        suppressions.emplace_back("unmatchedSuppression", "*", Suppressions::Suppression::NO_LINE);
-        reportUnmatchedSuppressions(suppressions);
-        ASSERT_EQUALS("", errout.str());
-
-        // suppress all unmatchedSuppression (corresponds to "--suppress=unmatchedSuppression")
-        errout.str("");
-        suppressions.clear();
-        suppressions.emplace_back("abc", "a.c", 10U);
-        suppressions.emplace_back("unmatchedSuppression", "", Suppressions::Suppression::NO_LINE);
-        reportUnmatchedSuppressions(suppressions);
-        ASSERT_EQUALS("", errout.str());
-
-        // suppress all unmatchedSuppression in a.c
-        errout.str("");
-        suppressions.clear();
-        suppressions.emplace_back("abc", "a.c", 10U);
-        suppressions.emplace_back("unmatchedSuppression", "a.c", Suppressions::Suppression::NO_LINE);
-        reportUnmatchedSuppressions(suppressions);
-        ASSERT_EQUALS("", errout.str());
-
-        // suppress unmatchedSuppression in a.c at line 10
-        errout.str("");
-        suppressions.clear();
-        suppressions.emplace_back("abc", "a.c", 10U);
-        suppressions.emplace_back("unmatchedSuppression", "a.c", 10U);
-        reportUnmatchedSuppressions(suppressions);
-        ASSERT_EQUALS("", errout.str());
-
-        // don't suppress unmatchedSuppression when file is mismatching
-        errout.str("");
-        suppressions.clear();
-        suppressions.emplace_back("abc", "a.c", 10U);
-        suppressions.emplace_back("unmatchedSuppression", "b.c", Suppressions::Suppression::NO_LINE);
-        reportUnmatchedSuppressions(suppressions);
-        ASSERT_EQUALS("[a.c:10]: (information) Unmatched suppression: abc\n", errout.str());
-
-        // don't suppress unmatchedSuppression when line is mismatching
-        errout.str("");
-        suppressions.clear();
-        suppressions.emplace_back("abc", "a.c", 10U);
-        suppressions.emplace_back("unmatchedSuppression", "a.c", 1U);
-        reportUnmatchedSuppressions(suppressions);
-        ASSERT_EQUALS("[a.c:10]: (information) Unmatched suppression: abc\n", errout.str());
+    void substituteTemplateLocationStatic() const
+    {
+        {
+            std::string s;
+            ::substituteTemplateLocationStatic(s);
+            ASSERT_EQUALS("", s);
+        }
+        {
+            std::string s = "template";
+            ::substituteTemplateLocationStatic(s);
+            ASSERT_EQUALS("template", s);
+        }
+        {
+            std::string s = "template{black}\\z";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("template{black}\\z", s);
+        }
+        {
+            std::string s = "{reset}{bold}{dim}{red}{blue}{magenta}{default}\\b\\n\\r\\t";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("\b\n\r\t", s);
+        }
+        {
+            std::string s = "\\\\n";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("\\\n", s);
+        }
+        {
+            std::string s = "{{red}";
+            ::substituteTemplateFormatStatic(s);
+            ASSERT_EQUALS("{", s);
+        }
     }
 };
 

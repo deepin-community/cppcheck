@@ -18,8 +18,15 @@
 
 #include "testcppchecklibrarydata.h"
 
+#include <QDir>
 #include <QDebug>
-#include <QTest>
+#include <QFile>
+#include <QIODevice>
+#include <QList>
+#include <QPair>
+#include <QStringList>
+#include <QTextStream>
+#include <QtTest>
 
 const QString TestCppcheckLibraryData::TempCfgFile = "./tmp.cfg";
 
@@ -613,7 +620,7 @@ void TestCppcheckLibraryData::validateAllCfg()
 {
     const QDir dir(QString(SRCDIR) + "/../../../cfg/");
     const QStringList files = dir.entryList(QStringList() << "*.cfg",QDir::Files);
-    QVERIFY(files.size() != 0);
+    QVERIFY(!files.empty());
     bool error = false;
     for (const QString& f : files) {
         loadCfgFile(dir.absolutePath() + "/" + f, fileLibraryData, result);

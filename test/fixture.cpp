@@ -18,18 +18,21 @@
 
 #include "fixture.h"
 
-#include "color.h"
+#include "cppcheck.h"
+#include "errortypes.h"
 #include "options.h"
 #include "redirect.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cctype>
+#include <exception>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <string>
 
-std::ostringstream errout;
-std::ostringstream output;
+#include "xml.h"
 
 /**
  * TestRegistry
@@ -42,23 +45,25 @@ namespace {
     };
 }
 using TestSet = std::set<TestFixture*, CompareFixtures>;
-class TestRegistry {
-    TestSet _tests;
-public:
+namespace {
+    class TestRegistry {
+        TestSet _tests;
+    public:
 
-    static TestRegistry &theInstance() {
-        static TestRegistry testreg;
-        return testreg;
-    }
+        static TestRegistry &theInstance() {
+            static TestRegistry testreg;
+            return testreg;
+        }
 
-    void addTest(TestFixture *t) {
-        _tests.insert(t);
-    }
+        void addTest(TestFixture *t) {
+            _tests.insert(t);
+        }
 
-    const TestSet &tests() const {
-        return _tests;
-    }
-};
+        const TestSet &tests() const {
+            return _tests;
+        }
+    };
+}
 
 
 
@@ -73,13 +78,9 @@ unsigned int TestFixture::countTests;
 std::size_t TestFixture::fails_counter = 0;
 std::size_t TestFixture::todos_counter = 0;
 std::size_t TestFixture::succeeded_todos_counter = 0;
-std::set<std::string> TestFixture::missingLibs;
 
 TestFixture::TestFixture(const char * const _name)
-    : mVerbose(false),
-    exename(),
-    quiet_tests(false),
-    classname(_name)
+    : classname(_name)
 {
     TestRegistry::theInstance().addTest(this);
 }
@@ -90,6 +91,9 @@ bool TestFixture::prepareTest(const char testname[])
     mVerbose = false;
     mTemplateFormat.clear();
     mTemplateLocation.clear();
+    CppCheck::resetTimerResults();
+
+    prepareTestInternal();
 
     // Check if tests should be executed
     if (testToRun.empty() || testToRun == testname) {
@@ -100,11 +104,30 @@ bool TestFixture::prepareTest(const char testname[])
             std::putchar('.'); // Use putchar to write through redirection of std::cout/cerr
             std::fflush(stdout);
         } else {
-            std::cout << classname << "::" << testname << std::endl;
+            std::cout << classname << "::" << mTestname << std::endl;
         }
         return true;
     }
     return false;
+}
+
+void TestFixture::teardownTest()
+{
+    teardownTestInternal();
+
+    // TODO: enable
+    /*
+        {
+        const std::string s = errout.str();
+        if (!s.empty())
+            throw std::runtime_error("unconsumed ErrorLogger err: " + s);
+        }
+     */
+    {
+        const std::string s = output_str();
+        if (!s.empty())
+            throw std::runtime_error("unconsumed ErrorLogger out: " + s);
+    }
 }
 
 std::string TestFixture::getLocationStr(const char * const filename, const unsigned int linenr) const
@@ -283,11 +306,6 @@ void TestFixture::assertNoThrowFail(const char * const filename, const unsigned 
 
 }
 
-void TestFixture::complainMissingLib(const char * const libname)
-{
-    missingLibs.insert(libname);
-}
-
 void TestFixture::printHelp()
 {
     std::cout << "Testrunner - run Cppcheck tests\n"
@@ -311,12 +329,27 @@ void TestFixture::printHelp()
 void TestFixture::run(const std::string &str)
 {
     testToRun = str;
-    if (quiet_tests) {
-        std::cout << '\n' << classname << ':';
-        REDIRECT;
-        run();
-    } else
-        run();
+    try {
+        if (quiet_tests) {
+            std::cout << '\n' << classname << ':';
+            SUPPRESS;
+            run();
+        }
+        else
+            run();
+    }
+    catch (const InternalError& e) {
+        ++fails_counter;
+        errmsg << classname << "::" << mTestname << " - InternalError: " << e.errorMessage << std::endl;
+    }
+    catch (const std::exception& error) {
+        ++fails_counter;
+        errmsg << classname << "::" << mTestname << " - Exception: " << error.what() << std::endl;
+    }
+    catch (...) {
+        ++fails_counter;
+        errmsg << classname << "::" << mTestname << " - Unknown exception" << std::endl;
+    }
 }
 
 void TestFixture::processOptions(const options& args)
@@ -356,24 +389,76 @@ std::size_t TestFixture::runTests(const options& args)
     std::cerr << "Tests failed: " << fails_counter << std::endl << std::endl;
     std::cerr << errmsg.str();
 
-    if (!missingLibs.empty()) {
-        std::cerr << "Missing libraries: ";
-        for (const std::string & missingLib : missingLibs)
-            std::cerr << missingLib << "  ";
-        std::cerr << std::endl << std::endl;
-    }
     std::cerr.flush();
-    return fails_counter;
+    return fails_counter + succeeded_todos_counter;
 }
 
 void TestFixture::reportOut(const std::string & outmsg, Color /*c*/)
 {
-    output << outmsg << std::endl;
+    mOutput << outmsg << std::endl;
 }
 
 void TestFixture::reportErr(const ErrorMessage &msg)
 {
+    if (msg.severity == Severity::internal)
+        return;
     const std::string errormessage(msg.toString(mVerbose, mTemplateFormat, mTemplateLocation));
+    // TODO: remove the unique error handling?
     if (errout.str().find(errormessage) == std::string::npos)
         errout << errormessage << std::endl;
+}
+
+void TestFixture::setTemplateFormat(const std::string &templateFormat)
+{
+    if (templateFormat == "multiline") {
+        mTemplateFormat = "{file}:{line}:{severity}:{message}";
+        mTemplateLocation = "{file}:{line}:note:{info}";
+    }
+    else if (templateFormat == "simple") {
+        mTemplateFormat = "{file}:{line}:{column}: {severity}:{inconclusive:inconclusive:} {message} [{id}]";
+        mTemplateLocation = "";
+    }
+    else {
+        mTemplateFormat = templateFormat;
+        mTemplateLocation = "";
+    }
+}
+
+TestFixture::SettingsBuilder& TestFixture::SettingsBuilder::library(const char lib[]) {
+    if (REDUNDANT_CHECK && std::find(settings.libraries.cbegin(), settings.libraries.cend(), lib) != settings.libraries.cend())
+        throw std::runtime_error("redundant setting: libraries (" + std::string(lib) + ")");
+    // TODO: exename is not yet set
+    LOAD_LIB_2_EXE(settings.library, lib, fixture.exename.c_str());
+    // strip extension
+    std::string lib_s(lib);
+    const std::string ext(".cfg");
+    const auto pos = lib_s.find(ext);
+    if (pos != std::string::npos)
+        lib_s.erase(pos, ext.size());
+    settings.libraries.emplace_back(lib_s);
+    return *this;
+}
+
+TestFixture::SettingsBuilder& TestFixture::SettingsBuilder::platform(Platform::Type type)
+{
+    const std::string platformStr = Platform::toString(type);
+
+    if (REDUNDANT_CHECK && settings.platform.type == type)
+        throw std::runtime_error("redundant setting: platform (" + platformStr + ")");
+
+    std::string errstr;
+    // TODO: exename is not yet set
+    if (!settings.platform.set(platformStr, errstr, {fixture.exename}))
+        throw std::runtime_error("platform '" + platformStr + "' not found");
+    return *this;
+}
+
+TestFixture::SettingsBuilder& TestFixture::SettingsBuilder::libraryxml(const char xmldata[], std::size_t len)
+{
+    tinyxml2::XMLDocument doc;
+    if (tinyxml2::XML_SUCCESS != doc.Parse(xmldata, len))
+        throw std::runtime_error("loading XML data failed");
+    if (settings.library.load(doc).errorcode != Library::ErrorCode::OK)
+        throw std::runtime_error("loading library XML failed");
+    return *this;
 }

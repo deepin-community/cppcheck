@@ -19,6 +19,8 @@
 #include "codeeditstylecontrols.h"
 
 #include <QColorDialog>
+#include <QDialog>
+#include <QVariant>
 
 class QWidget;
 
@@ -67,8 +69,7 @@ const QColor& SelectColorButton::getColor()
 }
 
 SelectFontWeightCombo::SelectFontWeightCombo(QWidget* parent) :
-    QComboBox(parent),
-    mWeight(QFont::Normal)
+    QComboBox(parent)
 {
     addItem(QObject::tr("Thin"),
             QVariant(static_cast<int>(QFont::Thin)));
@@ -112,7 +113,7 @@ void SelectFontWeightCombo::changeWeight(int index)
     }
 }
 
-void SelectFontWeightCombo::setWeight(const QFont::Weight& weight)
+void SelectFontWeightCombo::setWeight(QFont::Weight weight)
 {
     mWeight = weight;
     updateWeight();

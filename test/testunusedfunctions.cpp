@@ -18,7 +18,9 @@
 
 #include "checkunusedfunctions.h"
 #include "errortypes.h"
+#include "helpers.h"
 #include "platform.h"
+#include "preprocessor.h"
 #include "settings.h"
 #include "fixture.h"
 #include "tokenize.h"
@@ -31,14 +33,13 @@ public:
     TestUnusedFunctions() : TestFixture("TestUnusedFunctions") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().severity(Severity::style).build();
 
     void run() override {
-        settings.severity.enable(Severity::style);
-
         TEST_CASE(incondition);
         TEST_CASE(return1);
         TEST_CASE(return2);
+        TEST_CASE(return3);
         TEST_CASE(callback1);
         TEST_CASE(callback2);
         TEST_CASE(else1);
@@ -52,6 +53,7 @@ private:
         TEST_CASE(template7); // #9766 crash
         TEST_CASE(template8);
         TEST_CASE(template9);
+        TEST_CASE(template10);
         TEST_CASE(throwIsNotAFunction);
         TEST_CASE(unusedError);
         TEST_CASE(unusedMain);
@@ -76,25 +78,27 @@ private:
         TEST_CASE(entrypointsWin);
         TEST_CASE(entrypointsWinU);
         TEST_CASE(entrypointsUnix);
+
+        TEST_CASE(includes);
     }
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
-    void check_(const char* file, int line, const char code[], Settings::PlatformType platform = Settings::Native) {
+    void check_(const char* file, int line, const char code[], Platform::Type platform = Platform::Type::Native, const Settings *s = nullptr) {
         // Clear the error buffer..
         errout.str("");
 
-        settings.platform(platform);
+        const Settings settings1 = settingsBuilder(s ? *s : settings).platform(platform).build();
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings1, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
         // Check for unused functions..
-        CheckUnusedFunctions checkUnusedFunctions(&tokenizer, &settings, this);
-        checkUnusedFunctions.parseTokens(tokenizer,  "someFile.c", &settings);
+        CheckUnusedFunctions checkUnusedFunctions(&tokenizer, &settings1, this);
+        checkUnusedFunctions.parseTokens(tokenizer, "someFile.c", &settings1);
         // check() returns error if and only if errout is not empty.
-        if ((checkUnusedFunctions.check)(this, settings)) {
+        if ((checkUnusedFunctions.check)(this, settings1)) {
             ASSERT(!errout.str().empty());
         } else {
             ASSERT_EQUALS("", errout.str());
@@ -122,6 +126,24 @@ private:
         check("char * foo()\n"
               "{\n"
               "    return *foo();\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void return3() {
+        check("typedef void (*VoidFunc)();\n" // #9602
+              "void sayHello() {\n"
+              "  printf(\"Hello World\\n\");\n"
+              "}\n"
+              "VoidFunc getEventHandler() {\n"
+              "  return sayHello;\n"
+              "}\n"
+              "void indirectHello() {\n"
+              "  VoidFunc handler = getEventHandler();\n"
+              "  handler();\n"
+              "}\n"
+              "int main() {\n"
+              "  indirectHello();\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }
@@ -316,8 +338,8 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
-    void template9() { // #7739
-        check("template<class T>\n"
+    void template9() {
+        check("template<class T>\n" // #7739
               "void f(T const& t) {}\n"
               "template<class T>\n"
               "void g(T const& t) {\n"
@@ -329,6 +351,21 @@ private:
               "    g(2);\n"
               "    g(3.14);\n"
               "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("template <typename T> T f(T);\n" // #9222
+              "template <typename T> T f(T i) { return i; }\n"
+              "template int f<int>(int);\n"
+              "int main() { return f(int(2)); }\n");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void template10() {
+        check("template<typename T>\n" // #12013, don't crash
+              "struct S {\n"
+              "    static const int digits = std::numeric_limits<T>::digits;\n"
+              "    using type = std::conditional<digits < 32, std::int32_t, std::int64_t>::type;\n"
+              "};\n");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -614,16 +651,13 @@ private:
         check("int _tmain() { }");
         ASSERT_EQUALS("[test.cpp:1]: (style) The function '_tmain' is never used.\n", errout.str());
 
-        Settings settingsOld = settings;
-        LOAD_LIB_2(settings.library, "windows.cfg");
+        const Settings s = settingsBuilder(settings).library("windows.cfg").build();
 
-        check("int WinMain() { }");
+        check("int WinMain() { }", Platform::Type::Native, &s);
         ASSERT_EQUALS("", errout.str());
 
-        check("int _tmain() { }");
+        check("int _tmain() { }", Platform::Type::Native, &s);
         ASSERT_EQUALS("", errout.str());
-
-        settings = settingsOld;
     }
 
     void entrypointsWinU() {
@@ -633,16 +667,13 @@ private:
         check("int _tmain() { }");
         ASSERT_EQUALS("[test.cpp:1]: (style) The function '_tmain' is never used.\n", errout.str());
 
-        Settings settingsOld = settings;
-        LOAD_LIB_2(settings.library, "windows.cfg");
+        const Settings s = settingsBuilder(settings).library("windows.cfg").build();
 
-        check("int wWinMain() { }");
+        check("int wWinMain() { }", Platform::Type::Native, &s);
         ASSERT_EQUALS("", errout.str());
 
-        check("int _tmain() { }");
+        check("int _tmain() { }", Platform::Type::Native, &s);
         ASSERT_EQUALS("", errout.str());
-
-        settings = settingsOld;
     }
 
     void entrypointsUnix() {
@@ -651,14 +682,27 @@ private:
         ASSERT_EQUALS("[test.cpp:1]: (style) The function '_init' is never used.\n"
                       "[test.cpp:2]: (style) The function '_fini' is never used.\n", errout.str());
 
-        Settings settingsOld = settings;
-        LOAD_LIB_2(settings.library, "gnu.cfg");
+        const Settings s = settingsBuilder(settings).library("gnu.cfg").build();
 
         check("int _init() { }\n"
-              "int _fini() { }\n");
+              "int _fini() { }\n", Platform::Type::Native, &s);
         ASSERT_EQUALS("", errout.str());
+    }
 
-        settings = settingsOld;
+    // TODO: fails because the location information is not be preserved by PreprocessorHelper::getcode()
+    void includes()
+    {
+        // #11483
+        const char inc[] = "class A {\n"
+                           "public:\n"
+                           "    void f() {}\n"
+                           "};";
+        const char code[] = R"(#include "test.h")";
+        ScopedFile header("test.h", inc);
+        Preprocessor preprocessor(settings, this);
+        const std::string processed = PreprocessorHelper::getcode(preprocessor, code, "", "test.cpp");
+        check(processed.c_str());
+        TODO_ASSERT_EQUALS("[test.h:3]: (style) The function 'f' is never used.\n", "[test.cpp:3]: (style) The function 'f' is never used.\n", errout.str());
     }
 };
 

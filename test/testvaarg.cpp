@@ -30,7 +30,7 @@ public:
     TestVaarg() : TestFixture("TestVaarg") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().severity(Severity::warning).build();
 
 #define check(code) check_(code, __FILE__, __LINE__)
     void check_(const char code[], const char* file, int line) {
@@ -43,13 +43,10 @@ private:
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
         // Check..
-        CheckVaarg checkVaarg;
-        checkVaarg.runChecks(&tokenizer, &settings, this);
+        runChecks<CheckVaarg>(tokenizer, this);
     }
 
     void run() override {
-        settings.severity.enable(Severity::warning);
-
         TEST_CASE(wrongParameterTo_va_start);
         TEST_CASE(referenceAs_va_start);
         TEST_CASE(va_end_missing);

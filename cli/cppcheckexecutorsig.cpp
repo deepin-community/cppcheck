@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+//#include <features.h> // __USE_DYNAMIC_STACK_SIZE
 #include <map>
 #include <string>
 #include <unistd.h>
@@ -48,11 +49,11 @@
 #   include <ucontext.h>
 #endif
 
-
+// TODO: __USE_DYNAMIC_STACK_SIZE is dependent on the features.h include and not a built-in compiler define, so it might be problematic to depend on it
 #ifdef __USE_DYNAMIC_STACK_SIZE
-static const size_t MYSTACKSIZE = 16*1024+32768; // wild guess about a reasonable buffer
+static constexpr size_t MYSTACKSIZE = 16*1024+32768; // wild guess about a reasonable buffer
 #else
-static const size_t MYSTACKSIZE = 16*1024+SIGSTKSZ; // wild guess about a reasonable buffer
+static constexpr size_t MYSTACKSIZE = 16*1024+SIGSTKSZ; // wild guess about a reasonable buffer
 #endif
 static char mytstack[MYSTACKSIZE]= {0}; // alternative stack for signal handler
 static bool bStackBelowHeap=false; // lame attempt to locate heap vs. stack address space. See CppCheckExecutor::check_wrapper()
@@ -69,8 +70,7 @@ static bool IsAddressOnStack(const void* ptr)
     char a;
     if (bStackBelowHeap)
         return ptr < &a;
-    else
-        return ptr > &a;
+    return ptr > &a;
 }
 
 /* (declare this list here, so it may be used in signal handlers in addition to main())
@@ -102,6 +102,7 @@ static const Signalmap_t listofsignals = {
  * but when ending up here something went terribly wrong anyway.
  * And all which is left is just printing some information and terminate.
  */
+// cppcheck-suppress constParameterCallback
 static void CppcheckSignalHandler(int signo, siginfo_t * info, void * context)
 {
     int type = -1;
@@ -120,8 +121,9 @@ static void CppcheckSignalHandler(int signo, siginfo_t * info, void * context)
 
     const Signalmap_t::const_iterator it=listofsignals.find(signo);
     const char * const signame = (it==listofsignals.end()) ? "unknown" : it->second.c_str();
-    bool printCallstack=true; // try to print a callstack?
+#ifdef USE_UNIX_BACKTRACE_SUPPORT
     bool lowMem=false; // was low-memory condition detected? Be careful then! Avoid allocating much more memory then.
+#endif
     bool unexpectedSignal=true; // unexpected indicates program failure
     bool terminate=true; // exit process/thread
     const bool isAddressOnStack = IsAddressOnStack(info->si_addr);
@@ -137,7 +139,9 @@ static void CppcheckSignalHandler(int signo, siginfo_t * info, void * context)
             " - out of memory or assertion?\n",
 #endif
             output);
+#ifdef USE_UNIX_BACKTRACE_SUPPORT
         lowMem=true;     // educated guess
+#endif
         break;
     case SIGBUS:
         fputs("Internal error: cppcheck received signal ", output);
@@ -241,7 +245,6 @@ static void CppcheckSignalHandler(int signo, siginfo_t * info, void * context)
         unexpectedSignal=false;     // legal usage: interrupt application via CTRL-C
         fputs("cppcheck received signal ", output);
         fputs(signame, output);
-        printCallstack=true;
         fputs(".\n", output);
         break;
     case SIGSEGV:
@@ -277,11 +280,9 @@ static void CppcheckSignalHandler(int signo, siginfo_t * info, void * context)
         fputs(".\n", output);
         break;
     }
-    if (printCallstack) {
 #ifdef USE_UNIX_BACKTRACE_SUPPORT
-        print_stacktrace(output, true, -1, lowMem);
+    print_stacktrace(output, true, -1, lowMem);
 #endif
-    }
     if (unexpectedSignal) {
         fputs("\nPlease report this to the cppcheck developers!\n", output);
     }
@@ -297,11 +298,11 @@ static void CppcheckSignalHandler(int signo, siginfo_t * info, void * context)
     }
 }
 
-int check_wrapper_sig(CppCheckExecutor& executor, int (CppCheckExecutor::*f)(CppCheck&), CppCheck& cppcheck)
+int check_wrapper_sig(CppCheckExecutor& executor, int (CppCheckExecutor::*f)(CppCheck&) const, CppCheck& cppcheck)
 {
     // determine stack vs. heap
     char stackVariable;
-    char *heapVariable=(char*)malloc(1);
+    char *heapVariable=static_cast<char*>(malloc(1));
     bStackBelowHeap = &stackVariable < heapVariable;
     free(heapVariable);
 
@@ -320,7 +321,7 @@ int check_wrapper_sig(CppCheckExecutor& executor, int (CppCheckExecutor::*f)(Cpp
     for (std::map<int, std::string>::const_iterator sig=listofsignals.cbegin(); sig!=listofsignals.cend(); ++sig) {
         sigaction(sig->first, &act, nullptr);
     }
-    return (&executor->*f)(cppcheck);
+    return (executor.*f)(cppcheck);
 }
 
 #endif

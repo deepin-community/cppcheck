@@ -21,11 +21,11 @@
 //---------------------------------------------------------------------------
 
 #include "config.h"
-#include "errortypes.h"
 
 #include <cstddef>
 #include <istream>
 #include <list>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,10 +34,17 @@
 /// @{
 
 class Tokenizer;
+class ErrorMessage;
+class ErrorLogger;
+enum class Certainty;
 
 /** @brief class for handling suppressions */
 class CPPCHECKLIB Suppressions {
 public:
+
+    enum class Type {
+        unique, file, block, blockBegin, blockEnd, macro
+    };
 
     struct CPPCHECKLIB ErrorMessage {
         std::size_t hash;
@@ -49,28 +56,16 @@ public:
         int lineNumber;
         Certainty certainty;
         std::string symbolNames;
+        std::set<std::string> macroNames;
+
+        static Suppressions::ErrorMessage fromErrorMessage(const ::ErrorMessage &msg, const std::set<std::string> &macroNames);
     private:
         std::string mFileName;
     };
 
     struct CPPCHECKLIB Suppression {
-        Suppression() : lineNumber(NO_LINE), hash(0), thisAndNextLine(false), matched(false), checked(false) {}
-        Suppression(const Suppression &other) {
-            *this = other;
-        }
-        Suppression(std::string id, std::string file, int line=NO_LINE) : errorId(std::move(id)), fileName(std::move(file)), lineNumber(line), hash(0), thisAndNextLine(false), matched(false), checked(false) {}
-
-        Suppression & operator=(const Suppression &other) {
-            errorId = other.errorId;
-            fileName = other.fileName;
-            lineNumber = other.lineNumber;
-            symbolName = other.symbolName;
-            hash = other.hash;
-            thisAndNextLine = other.thisAndNextLine;
-            matched = other.matched;
-            checked = other.checked;
-            return *this;
-        }
+        Suppression() = default;
+        Suppression(std::string id, std::string file, int line=NO_LINE) : errorId(std::move(id)), fileName(std::move(file)), lineNumber(line) {}
 
         bool operator<(const Suppression &other) const {
             if (errorId != other.errorId)
@@ -81,11 +76,35 @@ public:
                 return fileName < other.fileName;
             if (symbolName != other.symbolName)
                 return symbolName < other.symbolName;
+            if (macroName != other.macroName)
+                return macroName < other.macroName;
             if (hash != other.hash)
                 return hash < other.hash;
             if (thisAndNextLine != other.thisAndNextLine)
                 return thisAndNextLine;
             return false;
+        }
+
+        bool operator==(const Suppression &other) const {
+            if (errorId != other.errorId)
+                return false;
+            if (lineNumber < other.lineNumber)
+                return false;
+            if (fileName != other.fileName)
+                return false;
+            if (symbolName != other.symbolName)
+                return false;
+            if (macroName != other.macroName)
+                return false;
+            if (hash != other.hash)
+                return false;
+            if (type != other.type)
+                return false;
+            if (lineBegin != other.lineBegin)
+                return false;
+            if (lineEnd != other.lineEnd)
+                return false;
+            return true;
         }
 
         /**
@@ -117,12 +136,16 @@ public:
 
         std::string errorId;
         std::string fileName;
-        int lineNumber;
+        int lineNumber = NO_LINE;
+        int lineBegin = NO_LINE;
+        int lineEnd = NO_LINE;
+        Type type = Type::unique;
         std::string symbolName;
-        std::size_t hash;
-        bool thisAndNextLine; // Special case for backwards compatibility: { // cppcheck-suppress something
-        bool matched;
-        bool checked; // for inline suppressions, checked or not
+        std::string macroName;
+        std::size_t hash{};
+        bool thisAndNextLine{}; // Special case for backwards compatibility: { // cppcheck-suppress something
+        bool matched{};
+        bool checked{}; // for inline suppressions, checked or not
 
         enum { NO_LINE = -1 };
     };
@@ -162,28 +185,37 @@ public:
      * @param suppression suppression details
      * @return error message. empty upon success
      */
-    std::string addSuppression(const Suppression &suppression);
+    std::string addSuppression(Suppression suppression);
 
     /**
      * @brief Combine list of suppressions into the current suppressions.
      * @param suppressions list of suppression details
      * @return error message. empty upon success
      */
-    std::string addSuppressions(const std::list<Suppression> &suppressions);
+    std::string addSuppressions(std::list<Suppression> suppressions);
+
+    /**
+     * @brief Returns true if this message should not be shown to the user.
+     * @param errmsg error message
+     * @param global use global suppressions
+     * @return true if this error is suppressed.
+     */
+    bool isSuppressed(const ErrorMessage &errmsg, bool global = true);
+
+    /**
+     * @brief Returns true if this message is "explicitly" suppressed. The suppression "id" must match textually exactly.
+     * @param errmsg error message
+     * @param global use global suppressions
+     * @return true if this error is explicitly suppressed.
+     */
+    bool isSuppressedExplicitly(const ErrorMessage &errmsg, bool global = true);
 
     /**
      * @brief Returns true if this message should not be shown to the user.
      * @param errmsg error message
      * @return true if this error is suppressed.
      */
-    bool isSuppressed(const ErrorMessage &errmsg);
-
-    /**
-     * @brief Returns true if this message should not be shown to the user, only uses local suppressions.
-     * @param errmsg error message
-     * @return true if this error is suppressed.
-     */
-    bool isSuppressedLocal(const ErrorMessage &errmsg);
+    bool isSuppressed(const ::ErrorMessage &errmsg, const std::set<std::string>& macroNames);
 
     /**
      * @brief Create an xml dump of suppressions
@@ -213,6 +245,13 @@ public:
      * @brief Marks Inline Suppressions as checked if source line is in the token stream
      */
     void markUnmatchedInlineSuppressionsAsChecked(const Tokenizer &tokenizer);
+
+    /**
+     * Report unmatched suppressions
+     * @param unmatched list of unmatched suppressions (from Settings::Suppressions::getUnmatched(Local|Global)Suppressions)
+     * @return true is returned if errors are reported
+     */
+    static bool reportUnmatchedSuppressions(const std::list<Suppressions::Suppression> &unmatched, ErrorLogger &errorLogger);
 
 private:
     /** @brief List of error which the user doesn't want to see. */

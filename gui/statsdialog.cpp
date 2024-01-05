@@ -19,43 +19,67 @@
 #include "statsdialog.h"
 
 #include "checkstatistics.h"
-#include "common.h"
 #include "projectfile.h"
 #include "showtypes.h"
 
 #include "ui_statsdialog.h"
 
+#include <QApplication>
 #include <QClipboard>
 #include <QDate>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFont>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMimeData>
+#include <QPageSize>
+#include <QPlainTextEdit>
 #include <QPrinter>
-#include <QRegularExpression>
+#include <QPushButton>
+#include <QStringList>
 #include <QTextDocument>
 #include <QWidget>
+#include <Qt>
 
-#ifdef HAVE_QCHART
+#ifdef QT_CHARTS_LIB
+#include "common.h"
+
 #include <QAbstractSeries>
 #include <QChartView>
+#include <QDateTime>
 #include <QDateTimeAxis>
+#include <QDir>
+#include <QFile>
+#include <QIODevice>
+#include <QLayout>
 #include <QLineSeries>
+#include <QList>
+#include <QPainter>
+#include <QPointF>
+#include <QRegularExpression>
 #include <QTextStream>
 #include <QValueAxis>
 
 #if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
-using namespace QtCharts;
+QT_CHARTS_USE_NAMESPACE
 #endif
+
+static QLineSeries *numberOfReports(const QString &fileName, const QString &severity);
+static QChartView *createChart(const QString &statsFile, const QString &tool);
 #endif
 
 static const QString CPPCHECK("cppcheck");
 
 StatsDialog::StatsDialog(QWidget *parent)
     : QDialog(parent),
-    mUI(new Ui::StatsDialog),
-    mStatistics(nullptr)
+    mUI(new Ui::StatsDialog)
 {
     mUI->setupUi(this);
+
+    QFont font("courier");
+    font.setStyleHint(QFont::Monospace);
+    mUI->mCheckersReport->setFont(font);
 
     setWindowFlags(Qt::Window);
 
@@ -76,7 +100,7 @@ void StatsDialog::setProject(const ProjectFile* projectFile)
         mUI->mIncludePaths->setText(projectFile->getIncludeDirs().join(";"));
         mUI->mDefines->setText(projectFile->getDefines().join(";"));
         mUI->mUndefines->setText(projectFile->getUndefines().join(";"));
-#ifndef HAVE_QCHART
+#ifndef QT_CHARTS_LIB
         mUI->mTabHistory->setVisible(false);
 #else
         QString statsFile;
@@ -89,8 +113,7 @@ void StatsDialog::setProject(const ProjectFile* projectFile)
         }
         mUI->mLblHistoryFile->setText(tr("File: ") + (statsFile.isEmpty() ? tr("No cppcheck build dir") : statsFile));
         if (!statsFile.isEmpty()) {
-            QChartView *chartView;
-            chartView = createChart(statsFile, "cppcheck");
+            QChartView *chartView = createChart(statsFile, "cppcheck");
             mUI->mTabHistory->layout()->addWidget(chartView);
             if (projectFile->getClangAnalyzer()) {
                 chartView = createChart(statsFile, CLANG_ANALYZER);
@@ -348,16 +371,18 @@ void StatsDialog::copyToClipboard()
 void StatsDialog::setStatistics(const CheckStatistics *stats)
 {
     mStatistics = stats;
-    mUI->mLblErrors->setText(QString("%1").arg(stats->getCount(CPPCHECK,ShowTypes::ShowErrors)));
-    mUI->mLblWarnings->setText(QString("%1").arg(stats->getCount(CPPCHECK,ShowTypes::ShowWarnings)));
-    mUI->mLblStyle->setText(QString("%1").arg(stats->getCount(CPPCHECK,ShowTypes::ShowStyle)));
-    mUI->mLblPortability->setText(QString("%1").arg(stats->getCount(CPPCHECK,ShowTypes::ShowPortability)));
-    mUI->mLblPerformance->setText(QString("%1").arg(stats->getCount(CPPCHECK,ShowTypes::ShowPerformance)));
-    mUI->mLblInformation->setText(QString("%1").arg(stats->getCount(CPPCHECK,ShowTypes::ShowInformation)));
+    mUI->mLblErrors->setText(QString::number(stats->getCount(CPPCHECK,ShowTypes::ShowErrors)));
+    mUI->mLblWarnings->setText(QString::number(stats->getCount(CPPCHECK,ShowTypes::ShowWarnings)));
+    mUI->mLblStyle->setText(QString::number(stats->getCount(CPPCHECK,ShowTypes::ShowStyle)));
+    mUI->mLblPortability->setText(QString::number(stats->getCount(CPPCHECK,ShowTypes::ShowPortability)));
+    mUI->mLblPerformance->setText(QString::number(stats->getCount(CPPCHECK,ShowTypes::ShowPerformance)));
+    mUI->mLblInformation->setText(QString::number(stats->getCount(CPPCHECK,ShowTypes::ShowInformation)));
+    mUI->mLblActiveCheckers->setText(QString::number(stats->getNumberOfActiveCheckers()));
+    mUI->mCheckersReport->setPlainText(stats->getCheckersReport());
 }
 
-#ifdef HAVE_QCHART
-QChartView *StatsDialog::createChart(const QString &statsFile, const QString &tool)
+#ifdef QT_CHARTS_LIB
+QChartView *createChart(const QString &statsFile, const QString &tool)
 {
     QChart *chart = new QChart;
     chart->addSeries(numberOfReports(statsFile, tool + "-error"));
@@ -399,7 +424,7 @@ QChartView *StatsDialog::createChart(const QString &statsFile, const QString &to
     return chartView;
 }
 
-QLineSeries *StatsDialog::numberOfReports(const QString &fileName, const QString &severity) const
+QLineSeries *numberOfReports(const QString &fileName, const QString &severity)
 {
     QLineSeries *series = new QLineSeries();
     series->setName(severity);

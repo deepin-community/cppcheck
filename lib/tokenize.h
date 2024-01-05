@@ -22,9 +22,9 @@
 //---------------------------------------------------------------------------
 
 #include "config.h"
-#include "errortypes.h"
 #include "tokenlist.h"
 
+#include <cassert>
 #include <iosfwd>
 #include <list>
 #include <map>
@@ -38,7 +38,7 @@ class Token;
 class TemplateSimplifier;
 class ErrorLogger;
 class Preprocessor;
-class VariableMap;
+enum class Severity;
 
 namespace simplecpp {
     class TokenList;
@@ -59,8 +59,7 @@ class CPPCHECKLIB Tokenizer {
     friend class TemplateSimplifier;
 
 public:
-    Tokenizer();
-    Tokenizer(const Settings * settings, ErrorLogger *errorLogger);
+    explicit Tokenizer(const Settings * settings, ErrorLogger *errorLogger = nullptr, const Preprocessor *preprocessor = nullptr);
     ~Tokenizer();
 
     void setTimerResults(TimerResults *tr) {
@@ -158,19 +157,13 @@ public:
     nonneg int sizeOfType(const std::string& type) const;
 
     void simplifyDebug();
-    /**
-     * Try to determine if function parameter is passed by value by looking
-     * at the function declaration.
-     * @param fpar token for function parameter in the function call
-     * @return true if the parameter is passed by value. if unsure, false is returned
-     */
-    bool isFunctionParameterPassedByValue(const Token *fpar) const;
 
     /** Simplify assignment where rhs is a block : "x=({123;});" => "{x=123;}" */
     void simplifyAssignmentBlock();
 
     /** Insert array size where it isn't given */
     void arraySize();
+    void arraySizeAfterValueFlow(); // cppcheck-suppress functionConst
 
     /** Simplify labels and 'case|default' syntaxes.
      */
@@ -202,7 +195,7 @@ public:
      * \param only_k_r_fpar Only simplify K&R function parameters
      */
     void simplifyVarDecl(const bool only_k_r_fpar);
-    void simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, const bool only_k_r_fpar);
+    void simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, const bool only_k_r_fpar); // cppcheck-suppress functionConst // has side effects
 
     /**
      * Simplify variable initialization
@@ -267,14 +260,20 @@ public:
      * A c;
      */
     void simplifyTypedef();
+    void simplifyTypedefCpp();
+    /**
+     * Move typedef token to the left og the expression
+     */
+    void simplifyTypedefLHS();
 
     /**
      */
-    bool isMemberFunction(const Token *openParen) const;
+    static bool isMemberFunction(const Token *openParen);
 
     /**
      */
     bool simplifyUsing();
+    void simplifyUsingError(const Token* usingStart, const Token* usingEnd);
 
     /** Simplify useless C++ empty namespaces, like: 'namespace %name% { }'*/
     void simplifyEmptyNamespaces();
@@ -366,21 +365,10 @@ public:
      * @param endsWith    string after function head
      * @return token matching with endsWith if syntax seems to be a function head else nullptr
      */
-    const Token * isFunctionHead(const Token *tok, const std::string &endsWith) const;
+    static const Token * isFunctionHead(const Token *tok, const std::string &endsWith);
 
-    /**
-     * is token pointing at function head?
-     * @param tok         A '(' or ')' token in a possible function head
-     * @param endsWith    string after function head
-     * @param cpp         c++ code
-     * @return token matching with endsWith if syntax seems to be a function head else nullptr
-     */
-    static const Token * isFunctionHead(const Token *tok, const std::string &endsWith, bool cpp);
-
-    void setPreprocessor(const Preprocessor *preprocessor) {
-        mPreprocessor = preprocessor;
-    }
     const Preprocessor *getPreprocessor() const {
+        assert(mPreprocessor);
         return mPreprocessor;
     }
 
@@ -470,13 +458,13 @@ private:
      */
     void simplifyAttribute();
 
+    /** Get function token for a attribute */
+    Token* getAttributeFuncTok(Token* tok, bool gccattr) const;
+
     /**
      * Remove \__cppcheck\__ ((?))
      */
     void simplifyCppcheckAttribute();
-
-    /** Remove alignas */
-    void removeAlignas();
 
     /** Simplify c++20 spaceship operator */
     void simplifySpaceshipOperator();
@@ -537,11 +525,6 @@ private:
     void simplifyBorland();
 
     /**
-     * Remove Qt signals and slots
-     */
-    void simplifyQtSignalsSlots();
-
-    /**
      * Collapse operator name tokens into single token
      * operator = => operator=
      */
@@ -554,12 +537,6 @@ private:
      * Remove [[attribute]] (C++11 and later) from TokenList
      */
     void simplifyCPPAttribute();
-
-    /**
-     * Replace strlen(str)
-     * @return true if any replacement took place, false else
-     * */
-    bool simplifyStrlen();
 
     /**
      * Convert namespace aliases
@@ -586,28 +563,19 @@ private:
     /**
      * report error message
      */
-    void reportError(const Token* tok, const Severity::SeverityType severity, const std::string& id, const std::string& msg, bool inconclusive = false) const;
-    void reportError(const std::list<const Token*>& callstack, Severity::SeverityType severity, const std::string& id, const std::string& msg, bool inconclusive = false) const;
+    void reportError(const Token* tok, const Severity severity, const std::string& id, const std::string& msg, bool inconclusive = false) const;
+    void reportError(const std::list<const Token*>& callstack, Severity severity, const std::string& id, const std::string& msg, bool inconclusive = false) const;
 
     bool duplicateTypedef(Token **tokPtr, const Token *name, const Token *typeDef) const;
 
     void unsupportedTypedef(const Token *tok) const;
 
-    void setVarIdClassDeclaration(const Token * const startToken,
-                                  const VariableMap &variableMap,
-                                  const nonneg int scopeStartVarId,
-                                  std::map<nonneg int, std::map<std::string, nonneg int>>& structMembers);
-
-    void setVarIdStructMembers(Token **tok1,
-                               std::map<nonneg int, std::map<std::string, nonneg int>>& structMembers,
-                               nonneg int *varId) const;
-
-    void setVarIdClassFunction(const std::string &classname,
-                               Token * const startToken,
-                               const Token * const endToken,
-                               const std::map<std::string, nonneg int> &varlist,
-                               std::map<nonneg int, std::map<std::string, nonneg int>>& structMembers,
-                               nonneg int *varId_);
+    static void setVarIdClassFunction(const std::string &classname,
+                                      Token * const startToken,
+                                      const Token * const endToken,
+                                      const std::map<std::string, nonneg int> &varlist,
+                                      std::map<nonneg int, std::map<std::string, nonneg int>>& structMembers,
+                                      nonneg int &varId_);
 
     /**
      * Output list of unknown types.
@@ -617,21 +585,9 @@ private:
     /** Find end of SQL (or PL/SQL) block */
     static const Token *findSQLBlockEnd(const Token *tokSQLStart);
 
-    bool operatorEnd(const Token * tok) const;
+    static bool operatorEnd(const Token * tok);
 
 public:
-
-    /** Was there templates in the code? */
-    bool codeWithTemplates() const {
-        return mCodeWithTemplates;
-    }
-
-
-    void setSettings(const Settings *settings) {
-        mSettings = settings;
-        list.setSettings(settings);
-    }
-
     const SymbolDatabase *getSymbolDatabase() const {
         return mSymbolDatabase;
     }
@@ -665,6 +621,10 @@ public:
         return list.front();
     }
 
+    Token* tokens() {
+        return list.front();
+    }
+
     /**
      * Helper function to check whether number is one (1 or 0.1E+1 or 1E+0) or not?
      * @param s the string to check
@@ -693,7 +653,8 @@ public:
     Tokenizer &operator=(const Tokenizer &) = delete;
 
 private:
-    Token *processFunc(Token *tok2, bool inOperator) const;
+    const Token *processFunc(const Token *tok2, bool inOperator) const;
+    Token *processFunc(Token *tok2, bool inOperator);
 
     /**
      * Get new variable id.
@@ -707,15 +668,15 @@ private:
     void setPodTypes();
 
     /** settings */
-    const Settings * mSettings;
+    const Settings * const mSettings;
 
     /** errorlogger */
     ErrorLogger* const mErrorLogger;
 
     /** Symbol database that all checks etc can use */
-    SymbolDatabase *mSymbolDatabase;
+    SymbolDatabase* mSymbolDatabase{};
 
-    TemplateSimplifier *mTemplateSimplifier;
+    TemplateSimplifier * const mTemplateSimplifier;
 
     /** E.g. "A" for code where "#ifdef A" is true. This is used to
         print additional information in error situations. */
@@ -734,23 +695,17 @@ private:
     std::vector<TypedefInfo> mTypedefInfo;
 
     /** variable count */
-    nonneg int mVarId;
+    nonneg int mVarId{};
 
     /** unnamed count "Unnamed0", "Unnamed1", "Unnamed2", ... */
-    nonneg int mUnnamedCount;
-
-    /**
-     * was there any templates? templates that are "unused" are
-     * removed from the token list
-     */
-    bool mCodeWithTemplates;
+    nonneg int mUnnamedCount{};
 
     /**
      * TimerResults
      */
-    TimerResults *mTimerResults;
+    TimerResults* mTimerResults{};
 
-    const Preprocessor *mPreprocessor;
+    const Preprocessor * const mPreprocessor;
 };
 
 /// @}

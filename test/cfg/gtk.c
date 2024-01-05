@@ -2,7 +2,7 @@
 // Test library configuration for gtk.cfg
 //
 // Usage:
-// $ cppcheck --check-library --library=gtk --enable=style --error-exitcode=1 --suppress=missingIncludeSystem --inline-suppr --library=gtk test/cfg/gtk.cpp
+// $ cppcheck --check-library --library=gtk --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr --library=gtk test/cfg/gtk.cpp
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
@@ -51,6 +51,7 @@ void validCode(int argInt, GHashTableIter * hash_table_iter, GHashTable * hash_t
     printf("%s", pGchar1);
     g_free(pGchar1);
 
+    // cppcheck-suppress unusedAllocatedMemory
     GError * pGerror = g_error_new(1, -2, "a %d", 1);
     g_error_free(pGerror);
 
@@ -76,7 +77,7 @@ void g_malloc_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_malloc(8);
 
-    gpointer gpt = g_malloc(1);
+    gconstpointer gpt = g_malloc(1);
 
     printf("%p", gpt);
 
@@ -88,7 +89,7 @@ void g_malloc0_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_malloc0(8);
 
-    gpointer gpt = g_malloc0(1);
+    gconstpointer gpt = g_malloc0(1);
 
     printf("%p", gpt);
 
@@ -100,7 +101,7 @@ void g_malloc_n_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_malloc_n(8, 1);
 
-    gpointer gpt = g_malloc_n(1, 2);
+    gconstpointer gpt = g_malloc_n(1, 2);
 
     printf("%p", gpt);
 
@@ -112,7 +113,7 @@ void g_malloc0_n_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_malloc0_n(8, 1);
 
-    gpointer gpt = g_malloc0_n(1, 2);
+    gconstpointer gpt = g_malloc0_n(1, 2);
 
     printf("%p", gpt);
 
@@ -124,7 +125,7 @@ void g_try_malloc_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_try_malloc(8);
 
-    gpointer gpt = g_try_malloc(1);
+    gconstpointer gpt = g_try_malloc(1);
 
     printf("%p", gpt);
 
@@ -136,7 +137,7 @@ void g_try_malloc0_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_try_malloc0(8);
 
-    gpointer gpt = g_try_malloc0(1);
+    gconstpointer gpt = g_try_malloc0(1);
 
     printf("%p", gpt);
 
@@ -148,7 +149,7 @@ void g_try_malloc_n_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_try_malloc_n(8, 1);
 
-    gpointer gpt = g_try_malloc_n(1, 2);
+    gconstpointer gpt = g_try_malloc_n(1, 2);
 
     printf("%p", gpt);
 
@@ -160,7 +161,7 @@ void g_try_malloc0_n_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_try_malloc0_n(8, 1);
 
-    gpointer gpt = g_try_malloc0_n(1, 2);
+    gconstpointer gpt = g_try_malloc0_n(1, 2);
 
     printf("%p", gpt);
 
@@ -257,7 +258,7 @@ void g_new_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_new(struct a, 1);
 
-    struct a * pNew2 = g_new(struct a, 2);
+    const struct a * pNew2 = g_new(struct a, 2);
     printf("%p", pNew2);
     // cppcheck-suppress memleak
 }
@@ -268,7 +269,7 @@ void g_new_if_test()
         int b;
     };
 
-    struct a * pNew3;
+    const struct a * pNew3;
     if (pNew3 = g_new(struct a, 6)) {
         printf("%p", pNew3);
     }
@@ -288,7 +289,7 @@ void g_new0_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_new0(struct a, 1);
 
-    struct a * pNew2 = g_new0(struct a, 2);
+    const struct a * pNew2 = g_new0(struct a, 2);
     printf("%p", pNew2);
     // cppcheck-suppress memleak
 }
@@ -306,7 +307,7 @@ void g_try_new_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_try_new(struct a, 1);
 
-    struct a * pNew2 = g_try_new(struct a, 2);
+    const struct a * pNew2 = g_try_new(struct a, 2);
     printf("%p", pNew2);
     // cppcheck-suppress memleak
 }
@@ -323,7 +324,7 @@ void g_try_new0_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_try_new0(struct a, 1);
 
-    struct a * pNew2 = g_try_new0(struct a, 2);
+    const struct a * pNew2 = g_try_new0(struct a, 2);
     printf("%p", pNew2);
     // cppcheck-suppress memleak
 }
@@ -369,7 +370,7 @@ void g_error_new_test()
     // cppcheck-suppress leakReturnValNotUsed
     g_error_new(1, -2, "a %d", 1);
 
-    GError * pNew2 = g_error_new(1, -2, "a %d", 1);
+    const GError * pNew2 = g_error_new(1, -2, "a %d", 1);
     printf("%p", pNew2);
     // cppcheck-suppress memleak
 }

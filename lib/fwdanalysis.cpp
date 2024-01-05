@@ -25,7 +25,10 @@
 #include "token.h"
 #include "vfvalue.h"
 
+#include <list>
+#include <map>
 #include <string>
+#include <utility>
 
 static bool isUnchanged(const Token *startToken, const Token *endToken, const std::set<nonneg int> &exprVarIds, bool local)
 {
@@ -45,7 +48,7 @@ static bool isUnchanged(const Token *startToken, const Token *endToken, const st
         if (parent->astParent()) {
             if (parent->astParent()->tokType() == Token::Type::eIncDecOp)
                 return false;
-            else if (parent->astParent()->isAssignmentOp() && parent == parent->astParent()->astOperand1())
+            if (parent->astParent()->isAssignmentOp() && parent == parent->astParent()->astOperand1())
                 return false;
         }
     }
@@ -90,7 +93,7 @@ static bool hasVolatileCastOrVar(const Token *expr)
     return ret;
 }
 
-struct FwdAnalysis::Result FwdAnalysis::checkRecursive(const Token *expr, const Token *startToken, const Token *endToken, const std::set<nonneg int> &exprVarIds, bool local, bool inInnerClass, int depth)
+FwdAnalysis::Result FwdAnalysis::checkRecursive(const Token *expr, const Token *startToken, const Token *endToken, const std::set<nonneg int> &exprVarIds, bool local, bool inInnerClass, int depth)
 {
     // Parse the given tokens
     if (++depth > 1000)
@@ -179,7 +182,7 @@ struct FwdAnalysis::Result FwdAnalysis::checkRecursive(const Token *expr, const 
                 }
 
                 // check loop body again..
-                const struct FwdAnalysis::Result &result = checkRecursive(expr, tok->link(), tok, exprVarIds, local, inInnerClass, depth);
+                const FwdAnalysis::Result &result = checkRecursive(expr, tok->link(), tok, exprVarIds, local, inInnerClass, depth);
                 if (result.type == Result::Type::BAILOUT || result.type == Result::Type::READ)
                     return result;
             }
@@ -264,7 +267,7 @@ struct FwdAnalysis::Result FwdAnalysis::checkRecursive(const Token *expr, const 
             // TODO: This is a quick bailout to avoid FP #9420, there are false negatives (TODO_ASSERT_EQUALS)
             return Result(Result::Type::BAILOUT);
 
-        if (expr->isName() && Token::Match(tok, "%name% (") && tok->str().find("<") != std::string::npos && tok->str().find(expr->str()) != std::string::npos)
+        if (expr->isName() && Token::Match(tok, "%name% (") && tok->str().find('<') != std::string::npos && tok->str().find(expr->str()) != std::string::npos)
             return Result(Result::Type::BAILOUT);
 
         if (exprVarIds.find(tok->varId()) != exprVarIds.end()) {
@@ -314,19 +317,23 @@ struct FwdAnalysis::Result FwdAnalysis::checkRecursive(const Token *expr, const 
                 // ({ .. })
                 if (hasGccCompoundStatement(parent->astParent()->astOperand2()))
                     return Result(Result::Type::BAILOUT);
+                // cppcheck-suppress shadowFunction - TODO: fix this
                 const bool reassign = isSameExpression(mCpp, false, expr, parent, mLibrary, false, false, nullptr);
                 if (reassign)
                     return Result(Result::Type::WRITE, parent->astParent());
                 return Result(Result::Type::READ);
-            } else if (mWhat == What::Reassign && parent->valueType() && parent->valueType()->pointer && Token::Match(parent->astParent(), "%assign%") && parent == parent->astParent()->astOperand1()) {
+            }
+            if (mWhat == What::Reassign && parent->valueType() && parent->valueType()->pointer && Token::Match(parent->astParent(), "%assign%") && parent == parent->astParent()->astOperand1())
                 return Result(Result::Type::READ);
-            } else if (Token::Match(parent->astParent(), "%assign%") && !parent->astParent()->astParent() && parent == parent->astParent()->astOperand1()) {
+
+            if (Token::Match(parent->astParent(), "%assign%") && !parent->astParent()->astParent() && parent == parent->astParent()->astOperand1()) {
                 if (mWhat == What::Reassign)
                     return Result(Result::Type::BAILOUT, parent->astParent());
                 if (mWhat == What::UnusedValue && (!parent->valueType() || parent->valueType()->reference != Reference::None))
                     return Result(Result::Type::BAILOUT, parent->astParent());
                 continue;
-            } else if (mWhat == What::UnusedValue && parent->isUnaryOp("&") && Token::Match(parent->astParent(), "[,(]")) {
+            }
+            if (mWhat == What::UnusedValue && parent->isUnaryOp("&") && Token::Match(parent->astParent(), "[,(]")) {
                 // Pass variable to function the writes it
                 const Token *ftok = parent->astParent();
                 while (Token::simpleMatch(ftok, ","))
@@ -346,10 +353,9 @@ struct FwdAnalysis::Result FwdAnalysis::checkRecursive(const Token *expr, const 
                     }
                 }
                 return Result(Result::Type::BAILOUT, parent->astParent());
-            } else {
-                // TODO: this is a quick bailout
-                return Result(Result::Type::BAILOUT, parent->astParent());
             }
+            // TODO: this is a quick bailout
+            return Result(Result::Type::BAILOUT, parent->astParent());
         }
 
         if (Token::Match(tok, ")|do {")) {
@@ -358,6 +364,8 @@ struct FwdAnalysis::Result FwdAnalysis::checkRecursive(const Token *expr, const 
                 return Result(Result::Type::BAILOUT);
             const Result &result1 = checkRecursive(expr, tok->tokAt(2), tok->linkAt(1), exprVarIds, local, inInnerClass, depth);
             if (result1.type == Result::Type::READ || result1.type == Result::Type::BAILOUT)
+                return result1;
+            if (mWhat == What::UnusedValue && result1.type == Result::Type::WRITE && expr->variable() && expr->variable()->isReference())
                 return result1;
             if (mWhat == What::ValueFlow && result1.type == Result::Type::WRITE)
                 mValueFlowKnown = false;
@@ -482,6 +490,8 @@ bool FwdAnalysis::unusedValue(const Token *expr, const Token *startToken, const 
         return false;
     if (hasVolatileCastOrVar(expr))
         return false;
+    if (Token::simpleMatch(expr, "[") && astIsContainerView(expr->astOperand1()))
+        return false;
     mWhat = What::UnusedValue;
     Result result = check(expr, startToken, endToken);
     return (result.type == FwdAnalysis::Result::Type::NONE || result.type == FwdAnalysis::Result::Type::RETURN) && !possiblyAliased(expr, startToken);
@@ -489,15 +499,15 @@ bool FwdAnalysis::unusedValue(const Token *expr, const Token *startToken, const 
 
 bool FwdAnalysis::possiblyAliased(const Token *expr, const Token *startToken) const
 {
-    if (expr->isUnaryOp("*"))
+    if (expr->isUnaryOp("*") && !expr->astOperand1()->isUnaryOp("&"))
+        return true;
+    if (Token::simpleMatch(expr, ". *"))
         return true;
 
     const bool macro = false;
     const bool pure = false;
     const bool followVar = false;
     for (const Token *tok = startToken; tok; tok = tok->previous()) {
-        if (tok->str() == "{" && tok->scope()->type == Scope::eFunction && !(tok->astParent() && tok->astParent()->str() == ","))
-            break;
 
         if (Token::Match(tok, "%name% (") && !Token::Match(tok, "if|while|for")) {
             // Is argument passed by reference?
@@ -525,11 +535,15 @@ bool FwdAnalysis::possiblyAliased(const Token *expr, const Token *startToken) co
             addrOf = tok->astOperand1();
         else if (Token::simpleMatch(tok, "std :: ref ("))
             addrOf = tok->tokAt(3)->astOperand2();
+        else if (tok->valueType() && tok->valueType()->pointer &&
+                 (Token::Match(tok, "%var% = %var% ;") || Token::Match(tok, "%var% {|( %var% }|)")) &&
+                 Token::Match(expr->previous(), "%varid% [", tok->tokAt(2)->varId()))
+            addrOf = tok->tokAt(2);
         else
             continue;
 
         for (const Token *subexpr = expr; subexpr; subexpr = subexpr->astOperand1()) {
-            if (isSameExpression(mCpp, macro, subexpr, addrOf, mLibrary, pure, followVar))
+            if (subexpr != addrOf && isSameExpression(mCpp, macro, subexpr, addrOf, mLibrary, pure, followVar))
                 return true;
         }
     }

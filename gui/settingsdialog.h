@@ -21,6 +21,9 @@
 #define SETTINGSDIALOG_H
 
 #include <QDialog>
+#include <QObject>
+#include <QString>
+#include <Qt>
 
 class QSettings;
 class QWidget;
@@ -28,7 +31,6 @@ class ApplicationList;
 class TranslationHandler;
 class CodeEditorStyle;
 class QCheckBox;
-class QObject;
 namespace Ui {
     class Settings;
 }
@@ -183,7 +185,7 @@ protected:
      * @param box checkbox to save
      * @param name name for QSettings to store the value
      */
-    static void saveCheckboxValue(QSettings *settings, QCheckBox *box, const QString &name);
+    static void saveCheckboxValue(QSettings *settings, const QCheckBox *box, const QString &name);
 
     /**
      * @brief Convert bool to Qt::CheckState
@@ -238,7 +240,7 @@ protected:
 private:
     void manageStyleControls();
 
-    static const int mLangCodeRole = Qt::UserRole;
+    static constexpr int mLangCodeRole = Qt::UserRole;
 
     bool mPremium;
 };

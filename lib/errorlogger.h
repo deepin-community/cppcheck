@@ -23,11 +23,11 @@
 
 #include "config.h"
 #include "errortypes.h"
-#include "suppressions.h"
 #include "color.h"
 
 #include <cstddef>
 #include <list>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -110,32 +110,32 @@ public:
 
     ErrorMessage(std::list<FileLocation> callStack,
                  std::string file1,
-                 Severity::SeverityType severity,
+                 Severity severity,
                  const std::string &msg,
                  std::string id, Certainty certainty);
     ErrorMessage(std::list<FileLocation> callStack,
                  std::string file1,
-                 Severity::SeverityType severity,
+                 Severity severity,
                  const std::string &msg,
                  std::string id,
                  const CWE &cwe,
                  Certainty certainty);
     ErrorMessage(const std::list<const Token*>& callstack,
                  const TokenList* list,
-                 Severity::SeverityType severity,
+                 Severity severity,
                  std::string id,
                  const std::string& msg,
                  Certainty certainty);
     ErrorMessage(const std::list<const Token*>& callstack,
                  const TokenList* list,
-                 Severity::SeverityType severity,
+                 Severity severity,
                  std::string id,
                  const std::string& msg,
                  const CWE &cwe,
                  Certainty certainty);
     ErrorMessage(const ErrorPath &errorPath,
                  const TokenList *tokenList,
-                 Severity::SeverityType severity,
+                 Severity severity,
                  const char id[],
                  const std::string &msg,
                  const CWE &cwe,
@@ -148,7 +148,7 @@ public:
      */
     std::string toXML() const;
 
-    static std::string getXMLHeader(const std::string& productName);
+    static std::string getXMLHeader(std::string productName);
     static std::string getXMLFooter();
 
     /**
@@ -173,7 +173,7 @@ public:
     /** For GUI rechecking; source file (not header) */
     std::string file0;
 
-    Severity::SeverityType severity;
+    Severity severity;
     CWE cwe;
     Certainty certainty;
 
@@ -198,7 +198,7 @@ public:
         return mSymbolNames;
     }
 
-    Suppressions::ErrorMessage toSuppressionsErrorMessage() const;
+    static ErrorMessage fromInternalError(const InternalError &internalError, const TokenList *tokenList, const std::string &filename, const std::string& msg = emptyString);
 
 private:
     static std::string fixInvalidChars(const std::string& raw);
@@ -219,8 +219,8 @@ private:
  */
 class CPPCHECKLIB ErrorLogger {
 public:
-    ErrorLogger() {}
-    virtual ~ErrorLogger() {}
+    ErrorLogger() = default;
+    virtual ~ErrorLogger() = default;
 
     /**
      * Information about progress is directed here.
@@ -250,21 +250,6 @@ public:
         (void)value;
     }
 
-    /**
-     * Output information messages.
-     * @param msg Location and other information about the found error.
-     */
-    virtual void reportInfo(const ErrorMessage &msg) {
-        reportErr(msg);
-    }
-
-    /**
-     * Report unmatched suppressions
-     * @param unmatched list of unmatched suppressions (from Settings::Suppressions::getUnmatched(Local|Global)Suppressions)
-     * @return true is returned if errors are reported
-     */
-    bool reportUnmatchedSuppressions(const std::list<Suppressions::Suppression> &unmatched);
-
     static std::string callStackToString(const std::list<ErrorMessage::FileLocation> &callStack);
 
     /**
@@ -281,10 +266,23 @@ public:
                "</dict>\r\n"
                "</plist>";
     }
+
+    static bool isCriticalErrorId(const std::string& id) {
+        return mCriticalErrorIds.count(id) != 0;
+    }
+
+private:
+    static const std::set<std::string> mCriticalErrorIds;
 };
 
 /** Replace substring. Example replaceStr("1,NR,3", "NR", "2") => "1,2,3" */
 std::string replaceStr(std::string s, const std::string &from, const std::string &to);
+
+/** replaces the static parts of the location template **/
+CPPCHECKLIB void substituteTemplateFormatStatic(std::string& templateFormat);
+
+/** replaces the static parts of the location template **/
+CPPCHECKLIB void substituteTemplateLocationStatic(std::string& templateLocation);
 
 /// @}
 //---------------------------------------------------------------------------

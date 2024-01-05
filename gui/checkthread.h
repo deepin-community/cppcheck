@@ -23,11 +23,17 @@
 #include "cppcheck.h"
 #include "suppressions.h"
 
+#include <atomic>
+
+#include <QList>
+#include <QObject>
+#include <QString>
+#include <QStringList>
 #include <QThread>
 
-class QObject;
 class Settings;
 class ThreadResult;
+struct FileSettings;
 
 /// @addtogroup GUI
 /// @{
@@ -40,7 +46,6 @@ class CheckThread : public QThread {
     Q_OBJECT
 public:
     explicit CheckThread(ThreadResult &result);
-    ~CheckThread() override;
 
     /**
      * @brief Set settings for cppcheck
@@ -114,9 +119,9 @@ protected:
     };
 
     /**
-     * @brief Thread's current execution state.
+     * @brief Thread's current execution state. Can be changed from outside
      */
-    State mState;
+    std::atomic<State> mState{Ready};
 
     ThreadResult &mResult;
     /**
@@ -125,14 +130,14 @@ protected:
     CppCheck mCppcheck;
 
 private:
-    void runAddonsAndTools(const ImportProject::FileSettings *fileSettings, const QString &fileName);
+    void runAddonsAndTools(const FileSettings *fileSettings, const QString &fileName);
 
     void parseClangErrors(const QString &tool, const QString &file0, QString err);
 
     bool isSuppressed(const Suppressions::ErrorMessage &errorMessage) const;
 
     QStringList mFiles;
-    bool mAnalyseWholeProgram;
+    bool mAnalyseWholeProgram{};
     QStringList mAddonsAndTools;
     QStringList mClangIncludePaths;
     QList<Suppressions::Suppression> mSuppressions;

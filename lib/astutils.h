@@ -23,6 +23,7 @@
 //---------------------------------------------------------------------------
 
 #include <functional>
+#include <list>
 #include <stack>
 #include <string>
 #include <type_traits>
@@ -31,6 +32,7 @@
 #include "config.h"
 #include "errortypes.h"
 #include "library.h"
+#include "mathlib.h"
 #include "smallvector.h"
 #include "symboldatabase.h"
 #include "token.h"
@@ -114,6 +116,21 @@ const Token* findExpression(const nonneg int exprid,
                             const std::function<bool(const Token*)>& pred);
 const Token* findExpression(const Token* start, const nonneg int exprid);
 
+template<class T, class OuputIterator, REQUIRES("T must be a Token class", std::is_convertible<T*, const Token*> )>
+void astFlattenCopy(T* tok, const char* op, OuputIterator out, nonneg int depth = 100)
+{
+    --depth;
+    if (!tok || depth < 0)
+        return;
+    if (tok->str() == op) {
+        astFlattenCopy(tok->astOperand1(), op, out, depth);
+        astFlattenCopy(tok->astOperand2(), op, out, depth);
+    } else {
+        *out = tok;
+        ++out;
+    }
+}
+
 std::vector<const Token*> astFlatten(const Token* tok, const char* op);
 std::vector<Token*> astFlatten(Token* tok, const char* op);
 
@@ -121,6 +138,7 @@ nonneg int astCount(const Token* tok, const char* op, int depth = 100);
 
 bool astHasToken(const Token* root, const Token * tok);
 
+bool astHasExpr(const Token* tok, nonneg int exprid);
 bool astHasVar(const Token * tok, nonneg int varid);
 
 bool astIsPrimitive(const Token* tok);
@@ -149,9 +167,12 @@ bool astIsContainer(const Token *tok);
 
 bool astIsContainerView(const Token* tok);
 bool astIsContainerOwned(const Token* tok);
+bool astIsContainerString(const Token* tok);
 
 Library::Container::Action astContainerAction(const Token* tok, const Token** ftok = nullptr);
 Library::Container::Yield astContainerYield(const Token* tok, const Token** ftok = nullptr);
+
+Library::Container::Yield astFunctionYield(const Token* tok, const Settings* settings, const Token** ftok = nullptr);
 
 /** Is given token a range-declaration in a range-based for loop */
 bool astIsRangeBasedForDecl(const Token* tok);
@@ -165,7 +186,7 @@ bool astIsRangeBasedForDecl(const Token* tok);
  * static const int     int
  * std::vector<T>       std::vector
  */
-std::string astCanonicalType(const Token *expr);
+std::string astCanonicalType(const Token *expr, bool pointedToType);
 
 /** Is given syntax tree a variable comparison against value */
 const Token * astIsVariableComparison(const Token *tok, const std::string &comp, const std::string &rhs, const Token **vartok=nullptr);
@@ -216,12 +237,12 @@ const Token *findNextTokenFromBreak(const Token *breakToken);
  * Extract for loop values: loopvar varid, init value, step value, last value (inclusive)
  */
 bool extractForLoopValues(const Token *forToken,
-                          nonneg int * const varid,
-                          bool * const knownInitValue,
-                          long long * const initValue,
-                          bool * const partialCond,
-                          long long * const stepValue,
-                          long long * const lastValue);
+                          nonneg int &varid,
+                          bool &knownInitValue,
+                          long long &initValue,
+                          bool &partialCond,
+                          long long &stepValue,
+                          long long &lastValue);
 
 bool precedes(const Token * tok1, const Token * tok2);
 bool succeeds(const Token* tok1, const Token* tok2);
@@ -249,9 +270,9 @@ bool isStructuredBindingVariable(const Variable* var);
 const Token* isInLoopCondition(const Token* tok);
 
 /**
- * Is token used a boolean, that is to say cast to a bool, or used as a condition in a if/while/for
+ * Is token used as boolean, that is to say cast to a bool, or used as a condition in a if/while/for
  */
-CPPCHECKLIB bool isUsedAsBool(const Token * const tok);
+CPPCHECKLIB bool isUsedAsBool(const Token* const tok, const Settings* settings = nullptr);
 
 /**
  * Are two conditions opposite
@@ -330,17 +351,25 @@ bool isVariablesChanged(const Token* start,
                         bool cpp);
 
 bool isThisChanged(const Token* tok, int indirect, const Settings* settings, bool cpp);
-bool isThisChanged(const Token* start, const Token* end, int indirect, const Settings* settings, bool cpp);
+const Token* findThisChanged(const Token* start, const Token* end, int indirect, const Settings* settings, bool cpp);
 
 const Token* findVariableChanged(const Token *start, const Token *end, int indirect, const nonneg int exprid, bool globalvar, const Settings *settings, bool cpp, int depth = 20);
 Token* findVariableChanged(Token *start, const Token *end, int indirect, const nonneg int exprid, bool globalvar, const Settings *settings, bool cpp, int depth = 20);
 
-bool isExpressionChanged(const Token* expr,
-                         const Token* start,
-                         const Token* end,
-                         const Settings* settings,
-                         bool cpp,
-                         int depth = 20);
+CPPCHECKLIB const Token* findExpressionChanged(const Token* expr,
+                                               const Token* start,
+                                               const Token* end,
+                                               const Settings* settings,
+                                               bool cpp,
+                                               int depth = 20);
+
+const Token* findExpressionChangedSkipDeadCode(const Token* expr,
+                                               const Token* start,
+                                               const Token* end,
+                                               const Settings* settings,
+                                               bool cpp,
+                                               const std::function<std::vector<MathLib::bigint>(const Token* tok)>& evaluate,
+                                               int depth = 20);
 
 bool isExpressionChangedAt(const Token* expr,
                            const Token* tok,
@@ -353,7 +382,7 @@ bool isExpressionChangedAt(const Token* expr,
 /// If token is an alias if another variable
 bool isAliasOf(const Token *tok, nonneg int varid, bool* inconclusive = nullptr);
 
-bool isAliasOf(const Token* tok, const Token* expr, bool* inconclusive = nullptr);
+bool isAliasOf(const Token* tok, const Token* expr, int* indirect = nullptr, bool* inconclusive = nullptr);
 
 bool isAliased(const Variable *var);
 
@@ -375,10 +404,12 @@ std::vector<const Token *> getArguments(const Token *ftok);
 
 int getArgumentPos(const Variable* var, const Function* f);
 
+const Token* getIteratorExpression(const Token* tok);
+
 /**
  * Are the arguments a pair of iterators/pointers?
  */
-bool isIteratorPair(std::vector<const Token*> args);
+bool isIteratorPair(const std::vector<const Token*>& args);
 
 CPPCHECKLIB const Token *findLambdaStartToken(const Token *last);
 
@@ -388,7 +419,7 @@ CPPCHECKLIB const Token *findLambdaStartToken(const Token *last);
  * \return nullptr or the }
  */
 CPPCHECKLIB const Token *findLambdaEndToken(const Token *first);
-Token* findLambdaEndToken(Token* first);
+CPPCHECKLIB Token* findLambdaEndToken(Token* first);
 
 bool isLikelyStream(bool cpp, const Token *stream);
 
@@ -403,9 +434,11 @@ bool isCPPCast(const Token* tok);
 
 bool isConstVarExpression(const Token* tok, std::function<bool(const Token*)> skipPredicate = nullptr);
 
+bool isLeafDot(const Token* tok);
+
 enum class ExprUsage { None, NotUsed, PassedByReference, Used, Inconclusive };
 
-ExprUsage getExprUsage(const Token* tok, int indirect, const Settings* settings);
+ExprUsage getExprUsage(const Token* tok, int indirect, const Settings* settings, bool cpp);
 
 const Variable *getLHSVariable(const Token *tok);
 
@@ -422,6 +455,6 @@ CPPCHECKLIB bool isNullOperand(const Token *expr);
 
 bool isGlobalData(const Token *expr, bool cpp);
 
-bool isSizeOfEtc(const Token *tok);
+bool isUnevaluated(const Token *tok);
 
 #endif // astutilsH

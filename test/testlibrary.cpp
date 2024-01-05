@@ -26,13 +26,14 @@
 #include "tokenize.h"
 #include "tokenlist.h"
 
+#include <cstddef>
 #include <map>
 #include <sstream> // IWYU pragma: keep
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-#include <tinyxml2.h>
+#include "xml.h"
 
 #define ASSERT_EQ(expected, actual)   ASSERT(expected == actual)
 
@@ -41,7 +42,7 @@ public:
     TestLibrary() : TestFixture("TestLibrary") {}
 
 private:
-    Settings settings;
+    const Settings settings;
 
     void run() override {
         TEST_CASE(isCompliantValidationExpression);
@@ -71,10 +72,10 @@ private:
         TEST_CASE(loadLibErrors);
     }
 
-    static Library::Error readLibrary(Library& library, const char* xmldata) {
+    static bool loadxmldata(Library &lib, const char xmldata[], std::size_t len)
+    {
         tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata);
-        return library.load(doc);
+        return (tinyxml2::XML_SUCCESS == doc.Parse(xmldata, len)) && (lib.load(doc).errorcode == Library::ErrorCode::OK);
     }
 
     void isCompliantValidationExpression() const {
@@ -101,19 +102,19 @@ private:
 
     void empty() const {
         // Reading an empty library file is considered to be OK
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n<def/>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n<def/>";
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT(library.functions.empty());
     }
 
     void function() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <noreturn>false</noreturn>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <noreturn>false</noreturn>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo();");
@@ -121,22 +122,22 @@ private:
         tokenList.front()->next()->astOperand1(tokenList.front());
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT_EQUALS(library.functions.size(), 1U);
         ASSERT(library.functions.at("foo").argumentChecks.empty());
         ASSERT(library.isnotnoreturn(tokenList.front()));
     }
 
     void function_match_scope() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <arg nr=\"1\"/>"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <arg nr=\"1\"/>"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         {
             TokenList tokenList(nullptr);
             std::istringstream istr("fred.foo(123);"); // <- wrong scope, not library function
@@ -154,12 +155,12 @@ private:
     }
 
     void function_match_args() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <arg nr=\"1\"/>"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <arg nr=\"1\"/>"
+                                   "  </function>\n"
+                                   "</def>";
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo();"); // <- too few arguments, not library function
@@ -168,21 +169,21 @@ private:
         tokenList.createAst();
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT(library.isNotLibraryFunction(tokenList.front()));
     }
 
     void function_match_args_default() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <arg nr=\"1\"/>"
-                               "    <arg nr=\"2\" default=\"0\"/>"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <arg nr=\"1\"/>"
+                                   "    <arg nr=\"2\" default=\"0\"/>"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
 
         {
             TokenList tokenList(nullptr);
@@ -223,12 +224,12 @@ private:
     }
 
     void function_match_var() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <arg nr=\"1\"/>"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <arg nr=\"1\"/>"
+                                   "  </function>\n"
+                                   "</def>";
 
         TokenList tokenList(nullptr);
         std::istringstream istr("Fred foo(123);"); // <- Variable declaration, not library function
@@ -237,24 +238,24 @@ private:
         tokenList.front()->next()->varId(1);
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT(library.isNotLibraryFunction(tokenList.front()->next()));
     }
 
     void function_arg() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <arg nr=\"1\"><not-uninit/></arg>\n"
-                               "    <arg nr=\"2\"><not-null/></arg>\n"
-                               "    <arg nr=\"3\"><formatstr/></arg>\n"
-                               "    <arg nr=\"4\"><strz/></arg>\n"
-                               "    <arg nr=\"5\" default=\"0\"><not-bool/></arg>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <arg nr=\"1\"><not-uninit/></arg>\n"
+                                   "    <arg nr=\"2\"><not-null/></arg>\n"
+                                   "    <arg nr=\"3\"><formatstr/></arg>\n"
+                                   "    <arg nr=\"4\"><strz/></arg>\n"
+                                   "    <arg nr=\"5\" default=\"0\"><not-bool/></arg>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT_EQUALS(0, library.functions["foo"].argumentChecks[1].notuninit);
         ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[2].notnull);
         ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[3].formatstr);
@@ -265,29 +266,29 @@ private:
     }
 
     void function_arg_any() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "<function name=\"foo\">\n"
-                               "   <arg nr=\"any\"><not-uninit/></arg>\n"
-                               "</function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "<function name=\"foo\">\n"
+                                   "   <arg nr=\"any\"><not-uninit/></arg>\n"
+                                   "</function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT_EQUALS(0, library.functions["foo"].argumentChecks[-1].notuninit);
     }
 
     void function_arg_variadic() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "<function name=\"foo\">\n"
-                               "   <arg nr=\"1\"></arg>\n"
-                               "   <arg nr=\"variadic\"><not-uninit/></arg>\n"
-                               "</function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "<function name=\"foo\">\n"
+                                   "   <arg nr=\"1\"></arg>\n"
+                                   "   <arg nr=\"variadic\"><not-uninit/></arg>\n"
+                                   "</function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT_EQUALS(0, library.functions["foo"].argumentChecks[-1].notuninit);
 
         TokenList tokenList(nullptr);
@@ -302,18 +303,18 @@ private:
     }
 
     void function_arg_direction() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "<function name=\"foo\">\n"
-                               "   <arg nr=\"1\" direction=\"in\"></arg>\n"
-                               "   <arg nr=\"2\" direction=\"out\"></arg>\n"
-                               "   <arg nr=\"3\" direction=\"inout\"></arg>\n"
-                               "   <arg nr=\"4\"></arg>\n"
-                               "</function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "<function name=\"foo\">\n"
+                                   "   <arg nr=\"1\" direction=\"in\"></arg>\n"
+                                   "   <arg nr=\"2\" direction=\"out\"></arg>\n"
+                                   "   <arg nr=\"3\" direction=\"inout\"></arg>\n"
+                                   "   <arg nr=\"4\"></arg>\n"
+                                   "</function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo(a,b,c,d);");
@@ -327,25 +328,25 @@ private:
     }
 
     void function_arg_valid() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <arg nr=\"1\"><valid>1:</valid></arg>\n"
-                               "    <arg nr=\"2\"><valid>-7:0</valid></arg>\n"
-                               "    <arg nr=\"3\"><valid>1:5,8</valid></arg>\n"
-                               "    <arg nr=\"4\"><valid>-1,5</valid></arg>\n"
-                               "    <arg nr=\"5\"><valid>:1,5</valid></arg>\n"
-                               "    <arg nr=\"6\"><valid>1.5:</valid></arg>\n"
-                               "    <arg nr=\"7\"><valid>-6.7:-5.5,-3.3:-2.7</valid></arg>\n"
-                               "    <arg nr=\"8\"><valid>0.0:</valid></arg>\n"
-                               "    <arg nr=\"9\"><valid>:2.0</valid></arg>\n"
-                               "    <arg nr=\"10\"><valid>0.0</valid></arg>\n"
-                               "    <arg nr=\"11\"><valid>!0.0</valid></arg>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <arg nr=\"1\"><valid>1:</valid></arg>\n"
+                                   "    <arg nr=\"2\"><valid>-7:0</valid></arg>\n"
+                                   "    <arg nr=\"3\"><valid>1:5,8</valid></arg>\n"
+                                   "    <arg nr=\"4\"><valid>-1,5</valid></arg>\n"
+                                   "    <arg nr=\"5\"><valid>:1,5</valid></arg>\n"
+                                   "    <arg nr=\"6\"><valid>1.5:</valid></arg>\n"
+                                   "    <arg nr=\"7\"><valid>-6.7:-5.5,-3.3:-2.7</valid></arg>\n"
+                                   "    <arg nr=\"8\"><valid>0.0:</valid></arg>\n"
+                                   "    <arg nr=\"9\"><valid>:2.0</valid></arg>\n"
+                                   "    <arg nr=\"10\"><valid>0.0</valid></arg>\n"
+                                   "    <arg nr=\"11\"><valid>!0.0</valid></arg>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo(a,b,c,d,e,f,g,h,i,j,k);");
@@ -475,19 +476,19 @@ private:
     }
 
     void function_arg_minsize() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"foo\">\n"
-                               "    <arg nr=\"1\"><minsize type=\"strlen\" arg=\"2\"/></arg>\n"
-                               "    <arg nr=\"2\"><minsize type=\"argvalue\" arg=\"3\"/></arg>\n"
-                               "    <arg nr=\"3\"/>\n"
-                               "    <arg nr=\"4\"><minsize type=\"value\" value=\"500\"/></arg>\n"
-                               "    <arg nr=\"5\"><minsize type=\"value\" value=\"4\" baseType=\"int\"/></arg>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"foo\">\n"
+                                   "    <arg nr=\"1\"><minsize type=\"strlen\" arg=\"2\"/></arg>\n"
+                                   "    <arg nr=\"2\"><minsize type=\"argvalue\" arg=\"3\"/></arg>\n"
+                                   "    <arg nr=\"3\"/>\n"
+                                   "    <arg nr=\"4\"><minsize type=\"value\" value=\"500\"/></arg>\n"
+                                   "    <arg nr=\"5\"><minsize type=\"value\" value=\"4\" baseType=\"int\"/></arg>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo(a,b,c,d,e);");
@@ -538,15 +539,15 @@ private:
     }
 
     void function_namespace() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"Foo::foo,bar\">\n"
-                               "    <noreturn>false</noreturn>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"Foo::foo,bar\">\n"
+                                   "    <noreturn>false</noreturn>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT_EQUALS(library.functions.size(), 2U);
         ASSERT(library.functions.at("Foo::foo").argumentChecks.empty());
         ASSERT(library.functions.at("bar").argumentChecks.empty());
@@ -567,15 +568,15 @@ private:
     }
 
     void function_method() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"CString::Format\">\n"
-                               "    <noreturn>false</noreturn>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"CString::Format\">\n"
+                                   "    <noreturn>false</noreturn>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT_EQUALS(library.functions.size(), 1U);
 
         {
@@ -594,15 +595,15 @@ private:
     }
 
     void function_baseClassMethod() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"Base::f\">\n"
-                               "    <arg nr=\"1\"><not-null/></arg>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"Base::f\">\n"
+                                   "    <arg nr=\"1\"><not-null/></arg>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
 
         {
             Tokenizer tokenizer(&settings, nullptr);
@@ -620,18 +621,18 @@ private:
     }
 
     void function_warn() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <function name=\"a\">\n"
-                               "    <warn severity=\"style\" cstd=\"c99\">Message</warn>\n"
-                               "  </function>\n"
-                               "  <function name=\"b\">\n"
-                               "    <warn severity=\"performance\" cppstd=\"c++11\" reason=\"Obsolescent\" alternatives=\"c,d,e\"/>\n"
-                               "  </function>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <function name=\"a\">\n"
+                                   "    <warn severity=\"style\" cstd=\"c99\">Message</warn>\n"
+                                   "  </function>\n"
+                                   "  <function name=\"b\">\n"
+                                   "    <warn severity=\"performance\" cppstd=\"c++11\" reason=\"Obsolescent\" alternatives=\"c,d,e\"/>\n"
+                                   "  </function>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
 
         TokenList tokenList(nullptr);
         std::istringstream istr("a(); b();");
@@ -644,71 +645,71 @@ private:
         ASSERT(a && b);
         if (a && b) {
             ASSERT_EQUALS("Message", a->message);
-            ASSERT_EQUALS(Severity::style, a->severity);
+            ASSERT_EQUALS(static_cast<int>(Severity::style), static_cast<int>(a->severity));
             ASSERT_EQUALS(Standards::C99, a->standards.c);
             ASSERT_EQUALS(Standards::CPP03, a->standards.cpp);
 
             ASSERT_EQUALS("Obsolescent function 'b' called. It is recommended to use 'c', 'd' or 'e' instead.", b->message);
-            ASSERT_EQUALS(Severity::performance, b->severity);
+            ASSERT_EQUALS(static_cast<int>(Severity::performance), static_cast<int>(b->severity));
             ASSERT_EQUALS(Standards::C89, b->standards.c);
             ASSERT_EQUALS(Standards::CPP11, b->standards.cpp);
         }
     }
 
     void memory() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <memory>\n"
-                               "    <alloc>CreateX</alloc>\n"
-                               "    <dealloc>DeleteX</dealloc>\n"
-                               "  </memory>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <memory>\n"
+                                   "    <alloc>CreateX</alloc>\n"
+                                   "    <dealloc>DeleteX</dealloc>\n"
+                                   "  </memory>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT(library.functions.empty());
 
-        ASSERT(Library::ismemory(library.getAllocFuncInfo("CreateX")));
-        ASSERT_EQUALS(library.allocId("CreateX"), library.deallocId("DeleteX"));
         const Library::AllocFunc* af = library.getAllocFuncInfo("CreateX");
         ASSERT(af && af->arg == -1);
+        ASSERT(Library::ismemory(af));
+        ASSERT_EQUALS(library.allocId("CreateX"), library.deallocId("DeleteX"));
         const Library::AllocFunc* df = library.getDeallocFuncInfo("DeleteX");
         ASSERT(df && df->arg == 1);
     }
     void memory2() const {
-        const char xmldata1[] = "<?xml version=\"1.0\"?>\n"
-                                "<def>\n"
-                                "  <memory>\n"
-                                "    <alloc>malloc</alloc>\n"
-                                "    <dealloc>free</dealloc>\n"
-                                "  </memory>\n"
-                                "</def>";
-        const char xmldata2[] = "<?xml version=\"1.0\"?>\n"
-                                "<def>\n"
-                                "  <memory>\n"
-                                "    <alloc>foo</alloc>\n"
-                                "    <dealloc>free</dealloc>\n"
-                                "  </memory>\n"
-                                "</def>";
+        constexpr char xmldata1[] = "<?xml version=\"1.0\"?>\n"
+                                    "<def>\n"
+                                    "  <memory>\n"
+                                    "    <alloc>malloc</alloc>\n"
+                                    "    <dealloc>free</dealloc>\n"
+                                    "  </memory>\n"
+                                    "</def>";
+        constexpr char xmldata2[] = "<?xml version=\"1.0\"?>\n"
+                                    "<def>\n"
+                                    "  <memory>\n"
+                                    "    <alloc>foo</alloc>\n"
+                                    "    <dealloc>free</dealloc>\n"
+                                    "  </memory>\n"
+                                    "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, library.loadxmldata(xmldata1, sizeof(xmldata1)));
-        ASSERT_EQUALS(true, library.loadxmldata(xmldata2, sizeof(xmldata2)));
+        ASSERT_EQUALS(true, loadxmldata(library, xmldata1, sizeof(xmldata1)));
+        ASSERT_EQUALS(true, loadxmldata(library, xmldata2, sizeof(xmldata2)));
 
         ASSERT_EQUALS(library.deallocId("free"), library.allocId("malloc"));
         ASSERT_EQUALS(library.deallocId("free"), library.allocId("foo"));
     }
     void memory3() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <memory>\n"
-                               "    <alloc arg=\"5\" init=\"false\">CreateX</alloc>\n"
-                               "    <dealloc arg=\"2\">DeleteX</dealloc>\n"
-                               "  </memory>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <memory>\n"
+                                   "    <alloc arg=\"5\" init=\"false\">CreateX</alloc>\n"
+                                   "    <dealloc arg=\"2\">DeleteX</dealloc>\n"
+                                   "  </memory>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT(library.functions.empty());
 
         const Library::AllocFunc* af = library.getAllocFuncInfo("CreateX");
@@ -718,16 +719,16 @@ private:
     }
 
     void resource() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <resource>\n"
-                               "    <alloc>CreateX</alloc>\n"
-                               "    <dealloc>DeleteX</dealloc>\n"
-                               "  </resource>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <resource>\n"
+                                   "    <alloc>CreateX</alloc>\n"
+                                   "    <dealloc>DeleteX</dealloc>\n"
+                                   "  </resource>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         ASSERT(library.functions.empty());
 
         ASSERT(Library::isresource(library.allocId("CreateX")));
@@ -736,18 +737,18 @@ private:
 
     void podtype() const {
         {
-            const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                                   "<def>\n"
-                                   "  <podtype name=\"s8\" sign=\"s\" size=\"1\"/>\n"
-                                   "  <podtype name=\"u8\" sign=\"u\" size=\"1\"/>\n"
-                                   "  <podtype name=\"u16\" sign=\"u\" size=\"2\"/>\n"
-                                   "  <podtype name=\"s16\" sign=\"s\" size=\"2\"/>\n"
-                                   "</def>";
+            constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                       "<def>\n"
+                                       "  <podtype name=\"s8\" sign=\"s\" size=\"1\"/>\n"
+                                       "  <podtype name=\"u8\" sign=\"u\" size=\"1\"/>\n"
+                                       "  <podtype name=\"u16\" sign=\"u\" size=\"2\"/>\n"
+                                       "  <podtype name=\"s16\" sign=\"s\" size=\"2\"/>\n"
+                                       "</def>";
             Library library;
-            ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+            ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
             // s8
             {
-                const struct Library::PodType * const type = library.podtype("s8");
+                const Library::PodType * const type = library.podtype("s8");
                 ASSERT_EQUALS(true, type != nullptr);
                 if (type) {
                     ASSERT_EQUALS(1U, type->size);
@@ -756,7 +757,7 @@ private:
             }
             // u8
             {
-                const struct Library::PodType * const type = library.podtype("u8");
+                const Library::PodType * const type = library.podtype("u8");
                 ASSERT_EQUALS(true, type != nullptr);
                 if (type) {
                     ASSERT_EQUALS(1U, type->size);
@@ -765,7 +766,7 @@ private:
             }
             // u16
             {
-                const struct Library::PodType * const type = library.podtype("u16");
+                const Library::PodType * const type = library.podtype("u16");
                 ASSERT_EQUALS(true, type != nullptr);
                 if (type) {
                     ASSERT_EQUALS(2U, type->size);
@@ -774,7 +775,7 @@ private:
             }
             // s16
             {
-                const struct Library::PodType * const type = library.podtype("s16");
+                const Library::PodType * const type = library.podtype("s16");
                 ASSERT_EQUALS(true, type != nullptr);
                 if (type) {
                     ASSERT_EQUALS(2U, type->size);
@@ -783,46 +784,47 @@ private:
             }
             // robustness test: provide cfg without PodType
             {
-                const struct Library::PodType * const type = library.podtype("nonExistingPodType");
+                const Library::PodType * const type = library.podtype("nonExistingPodType");
                 ASSERT_EQUALS(true, type == nullptr);
             }
         }
     }
 
     void container() const {
-        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                               "<def>\n"
-                               "  <container id=\"A\" startPattern=\"std :: A &lt;\" endPattern=\"&gt; !!::\" itEndPattern=\"&gt; :: iterator\">\n"
-                               "    <type templateParameter=\"1\"/>\n"
-                               "    <size templateParameter=\"4\">\n"
-                               "      <function name=\"resize\" action=\"resize\"/>\n"
-                               "      <function name=\"clear\" action=\"clear\"/>\n"
-                               "      <function name=\"size\" yields=\"size\"/>\n"
-                               "      <function name=\"empty\" yields=\"empty\"/>\n"
-                               "      <function name=\"push_back\" action=\"push\"/>\n"
-                               "      <function name=\"pop_back\" action=\"pop\"/>\n"
-                               "    </size>\n"
-                               "    <access>\n"
-                               "      <function name=\"at\" yields=\"at_index\"/>\n"
-                               "      <function name=\"begin\" yields=\"start-iterator\"/>\n"
-                               "      <function name=\"end\" yields=\"end-iterator\"/>\n"
-                               "      <function name=\"data\" yields=\"buffer\"/>\n"
-                               "      <function name=\"c_str\" yields=\"buffer-nt\"/>\n"
-                               "      <function name=\"front\" yields=\"item\"/>\n"
-                               "      <function name=\"find\" action=\"find\"/>\n"
-                               "    </access>\n"
-                               "  </container>\n"
-                               "  <container id=\"B\" startPattern=\"std :: B &lt;\" inherits=\"A\" opLessAllowed=\"false\">\n"
-                               "    <size templateParameter=\"3\"/>\n" // Inherits all but templateParameter
-                               "  </container>\n"
-                               "  <container id=\"C\">\n"
-                               "    <type string=\"std-like\"/>\n"
-                               "    <access indexOperator=\"array-like\"/>\n"
-                               "  </container>\n"
-                               "</def>";
+        constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                   "<def>\n"
+                                   "  <container id=\"A\" startPattern=\"std :: A &lt;\" endPattern=\"&gt; !!::\" itEndPattern=\"&gt; :: iterator\">\n"
+                                   "    <type templateParameter=\"1\"/>\n"
+                                   "    <size templateParameter=\"4\">\n"
+                                   "      <function name=\"resize\" action=\"resize\"/>\n"
+                                   "      <function name=\"clear\" action=\"clear\"/>\n"
+                                   "      <function name=\"size\" yields=\"size\"/>\n"
+                                   "      <function name=\"empty\" yields=\"empty\"/>\n"
+                                   "      <function name=\"push_back\" action=\"push\"/>\n"
+                                   "      <function name=\"pop_back\" action=\"pop\"/>\n"
+                                   "    </size>\n"
+                                   "    <access>\n"
+                                   "      <function name=\"at\" yields=\"at_index\"/>\n"
+                                   "      <function name=\"begin\" yields=\"start-iterator\"/>\n"
+                                   "      <function name=\"end\" yields=\"end-iterator\"/>\n"
+                                   "      <function name=\"data\" yields=\"buffer\"/>\n"
+                                   "      <function name=\"c_str\" yields=\"buffer-nt\"/>\n"
+                                   "      <function name=\"front\" yields=\"item\"/>\n"
+                                   "      <function name=\"find\" action=\"find\"/>\n"
+                                   "      <function name=\"cfind\" action=\"find-const\"/>\n"
+                                   "    </access>\n"
+                                   "  </container>\n"
+                                   "  <container id=\"B\" startPattern=\"std :: B &lt;\" inherits=\"A\" opLessAllowed=\"false\">\n"
+                                   "    <size templateParameter=\"3\"/>\n" // Inherits all but templateParameter
+                                   "  </container>\n"
+                                   "  <container id=\"C\">\n"
+                                   "    <type string=\"std-like\"/>\n"
+                                   "    <access indexOperator=\"array-like\"/>\n"
+                                   "  </container>\n"
+                                   "</def>";
 
         Library library;
-        ASSERT_EQUALS(true, Library::ErrorCode::OK == (readLibrary(library, xmldata)).errorcode);
+        ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
 
         Library::Container& A = library.containers["A"];
         Library::Container& B = library.containers["B"];
@@ -850,6 +852,7 @@ private:
         ASSERT_EQ(Library::Container::Action::PUSH, A.getAction("push_back"));
         ASSERT_EQ(Library::Container::Action::POP, A.getAction("pop_back"));
         ASSERT_EQ(Library::Container::Action::FIND, A.getAction("find"));
+        ASSERT_EQ(Library::Container::Action::FIND_CONST, A.getAction("cfind"));
         ASSERT_EQ(Library::Container::Action::NO_ACTION, A.getAction("foo"));
 
         ASSERT_EQUALS(B.type_templateArgNo, 1);
@@ -933,29 +936,33 @@ private:
 
     void version() const {
         {
-            const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                                   "<def>\n"
-                                   "</def>";
+            constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                       "<def>\n"
+                                       "</def>";
             Library library;
-            const Library::Error err = readLibrary(library, xmldata);
-            ASSERT_EQUALS(true, err.errorcode == Library::ErrorCode::OK);
+            ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         }
         {
-            const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                                   "<def format=\"1\">\n"
-                                   "</def>";
+            constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                       "<def format=\"1\">\n"
+                                       "</def>";
             Library library;
-            const Library::Error err = readLibrary(library, xmldata);
-            ASSERT_EQUALS(true, err.errorcode == Library::ErrorCode::OK);
+            ASSERT(loadxmldata(library, xmldata, sizeof(xmldata)));
         }
         {
-            const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                                   "<def format=\"42\">\n"
-                                   "</def>";
+            constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                                       "<def format=\"42\">\n"
+                                       "</def>";
             Library library;
             const Library::Error err = readLibrary(library, xmldata);
             ASSERT_EQUALS(true, err.errorcode == Library::ErrorCode::UNSUPPORTED_FORMAT);
         }
+    }
+
+    static Library::Error readLibrary(Library& library, const char* xmldata) {
+        tinyxml2::XMLDocument doc;
+        doc.Parse(xmldata); // TODO: check result
+        return library.load(doc);
     }
 
     void loadLibError(const char xmldata[], Library::ErrorCode errorcode, const char* file, unsigned line) const {

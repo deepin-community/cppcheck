@@ -23,10 +23,8 @@
 
 #include "config.h"
 #include "mathlib.h"
-#include "errortypes.h"
 #include "standards.h"
 
-#include <cstddef>
 #include <map>
 #include <memory>
 #include <set>
@@ -38,6 +36,7 @@
 
 class Token;
 class Settings;
+enum class Severity;
 
 namespace tinyxml2 {
     class XMLDocument;
@@ -51,10 +50,14 @@ namespace tinyxml2 {
  * @brief Library definitions handling
  */
 class CPPCHECKLIB Library {
+    // TODO: get rid of this
     friend class TestSymbolDatabase; // For testing only
+    friend class TestSingleExecutorBase; // For testing only
+    friend class TestThreadExecutorBase; // For testing only
+    friend class TestProcessExecutorBase; // For testing only
 
 public:
-    Library();
+    Library() = default;
 
     enum class ErrorCode { OK, FILE_NOT_FOUND, BAD_XML, UNKNOWN_ELEMENT, MISSING_ATTRIBUTE, BAD_ATTRIBUTE_VALUE, UNSUPPORTED_FORMAT, DUPLICATE_PLATFORM_TYPE, PLATFORM_TYPE_REDEFINED };
 
@@ -70,9 +73,6 @@ public:
 
     Error load(const char exename[], const char path[]);
     Error load(const tinyxml2::XMLDocument &doc);
-
-    /** this is used for unit tests */
-    bool loadxmldata(const char xmldata[], std::size_t len);
 
     struct AllocFunc {
         int groupId;
@@ -103,48 +103,31 @@ public:
     /** get reallocation id for function */
     int getReallocId(const Token *tok, int arg) const;
 
+    // TODO: get rid of this
     /** get allocation info for function by name (deprecated, use other alloc) */
     const AllocFunc* getAllocFuncInfo(const char name[]) const {
         return getAllocDealloc(mAlloc, name);
     }
 
+    // TODO: get rid of this
     /** get deallocation info for function by name (deprecated, use other alloc) */
     const AllocFunc* getDeallocFuncInfo(const char name[]) const {
         return getAllocDealloc(mDealloc, name);
     }
 
+    // TODO: get rid of this
     /** get allocation id for function by name (deprecated, use other alloc) */
+    // cppcheck-suppress unusedFunction
     int allocId(const char name[]) const {
         const AllocFunc* af = getAllocDealloc(mAlloc, name);
         return af ? af->groupId : 0;
     }
 
+    // TODO: get rid of this
     /** get deallocation id for function by name (deprecated, use other alloc) */
     int deallocId(const char name[]) const {
         const AllocFunc* af = getAllocDealloc(mDealloc, name);
         return af ? af->groupId : 0;
-    }
-
-    /** set allocation id for function */
-    void setalloc(const std::string &functionname, int id, int arg) {
-        mAlloc[functionname].groupId = id;
-        mAlloc[functionname].arg = arg;
-    }
-
-    void setdealloc(const std::string &functionname, int id, int arg) {
-        mDealloc[functionname].groupId = id;
-        mDealloc[functionname].arg = arg;
-    }
-
-    void setrealloc(const std::string &functionname, int id, int arg, int reallocArg = 1) {
-        mRealloc[functionname].groupId = id;
-        mRealloc[functionname].arg = arg;
-        mRealloc[functionname].reallocArg = reallocArg;
-    }
-
-    /** add noreturn function setting */
-    void setnoreturn(const std::string& funcname, bool noreturn) {
-        mNoReturn[funcname] = noreturn ? FalseTrueMaybe::True : FalseTrueMaybe::False;
     }
 
     static bool isCompliantValidationExpression(const char* p);
@@ -154,7 +137,7 @@ public:
         return ((id > 0) && ((id & 1) == 0));
     }
     static bool ismemory(const AllocFunc* const func) {
-        return ((func->groupId > 0) && ((func->groupId & 1) == 0));
+        return func && (func->groupId > 0) && ((func->groupId & 1) == 0);
     }
 
     /** is allocation type resource? */
@@ -162,7 +145,7 @@ public:
         return ((id > 0) && ((id & 1) == 1));
     }
     static bool isresource(const AllocFunc* const func) {
-        return ((func->groupId > 0) && ((func->groupId & 1) == 1));
+        return func && (func->groupId > 0) && ((func->groupId & 1) == 1);
     }
 
     bool formatstr_function(const Token* ftok) const;
@@ -181,7 +164,7 @@ public:
     struct WarnInfo {
         std::string message;
         Standards standards;
-        Severity::SeverityType severity;
+        Severity severity;
     };
     std::map<std::string, WarnInfo> functionwarn;
 
@@ -206,18 +189,7 @@ public:
 
     class Container {
     public:
-        Container()
-            : type_templateArgNo(-1),
-            size_templateArgNo(-1),
-            arrayLike_indexOp(false),
-            stdStringLike(false),
-            stdAssociativeLike(false),
-            opLessAllowed(true),
-            hasInitializerListConstructor(false),
-            unstableErase(false),
-            unstableInsert(false),
-            view(false)
-        {}
+        Container() = default;
 
         enum class Action {
             RESIZE,
@@ -225,6 +197,7 @@ public:
             PUSH,
             POP,
             FIND,
+            FIND_CONST,
             INSERT,
             ERASE,
             CHANGE_CONTENT,
@@ -247,24 +220,25 @@ public:
         struct Function {
             Action action;
             Yield yield;
+            std::string returnType;
         };
         struct RangeItemRecordTypeItem {
             std::string name;
-            int templateParameter;
+            int templateParameter; // TODO: use this
         };
         std::string startPattern, startPattern2, endPattern, itEndPattern;
         std::map<std::string, Function> functions;
-        int type_templateArgNo;
+        int type_templateArgNo = -1;
         std::vector<RangeItemRecordTypeItem> rangeItemRecordType;
-        int size_templateArgNo;
-        bool arrayLike_indexOp;
-        bool stdStringLike;
-        bool stdAssociativeLike;
-        bool opLessAllowed;
-        bool hasInitializerListConstructor;
-        bool unstableErase;
-        bool unstableInsert;
-        bool view;
+        int size_templateArgNo = -1;
+        bool arrayLike_indexOp{};
+        bool stdStringLike{};
+        bool stdAssociativeLike{};
+        bool opLessAllowed = true;
+        bool hasInitializerListConstructor{};
+        bool unstableErase{};
+        bool unstableInsert{};
+        bool view{};
 
         Action getAction(const std::string& function) const {
             const std::map<std::string, Function>::const_iterator i = functions.find(function);
@@ -280,55 +254,44 @@ public:
             return Yield::NO_YIELD;
         }
 
+        const std::string& getReturnType(const std::string& function) const {
+            auto i = functions.find(function);
+            return (i != functions.end()) ? i->second.returnType : emptyString;
+        }
+
         static Yield yieldFrom(const std::string& yieldName);
         static Action actionFrom(const std::string& actionName);
     };
-    std::map<std::string, Container> containers;
+    std::unordered_map<std::string, Container> containers;
     const Container* detectContainer(const Token* typeStart) const;
     const Container* detectIterator(const Token* typeStart) const;
-    const Container* detectContainerOrIterator(const Token* typeStart, bool* isIterator = nullptr) const;
+    const Container* detectContainerOrIterator(const Token* typeStart, bool* isIterator = nullptr, bool withoutStd = false) const;
 
-    class ArgumentChecks {
-    public:
-        ArgumentChecks() :
-            notbool(false),
-            notnull(false),
-            notuninit(-1),
-            formatstr(false),
-            strz(false),
-            optional(false),
-            variadic(false),
-            iteratorInfo(),
-            direction(Direction::DIR_UNKNOWN) {}
-
-        bool notbool;
-        bool notnull;
-        int notuninit;
-        bool formatstr;
-        bool strz;
-        bool optional;
-        bool variadic;
+    struct ArgumentChecks {
+        bool notbool{};
+        bool notnull{};
+        int notuninit = -1;
+        bool formatstr{};
+        bool strz{};
+        bool optional{};
+        bool variadic{};
         std::string valid;
 
-        class IteratorInfo {
-        public:
-            IteratorInfo() : container(0), it(false), first(false), last(false) {}
-
-            int container;
-            bool it;
-            bool first;
-            bool last;
+        struct IteratorInfo {
+            int container{};
+            bool it{};
+            bool first{};
+            bool last{};
         };
         IteratorInfo iteratorInfo;
 
-        class MinSize {
-        public:
+        struct MinSize {
             enum class Type { NONE, STRLEN, ARGVALUE, SIZEOF, MUL, VALUE };
-            MinSize(Type t, int a) : type(t), arg(a), arg2(0), value(0) {}
+            MinSize(Type t, int a) : type(t), arg(a) {}
             Type type;
             int arg;
-            int arg2;
-            long long value;
+            int arg2 = 0;
+            long long value = 0;
             std::string baseType;
         };
         std::vector<MinSize> minsizes;
@@ -339,35 +302,23 @@ public:
             DIR_INOUT,  ///< Input to called function, and output to caller. Data is passed by reference or address and is potentially modified.
             DIR_UNKNOWN ///< direction not known / specified
         };
-        Direction direction;
+        Direction direction = Direction::DIR_UNKNOWN;
     };
 
     struct Function {
         std::map<int, ArgumentChecks> argumentChecks; // argument nr => argument data
-        bool use;
-        bool leakignore;
-        bool isconst;
-        bool ispure;
-        UseRetValType useretval;
-        bool ignore;  // ignore functions/macros from a library (gtk, qt etc)
-        bool formatstr;
-        bool formatstr_scan;
-        bool formatstr_secure;
-        Container::Action containerAction;
-        Container::Yield containerYield;
-        Function()
-            : use(false),
-            leakignore(false),
-            isconst(false),
-            ispure(false),
-            useretval(UseRetValType::NONE),
-            ignore(false),
-            formatstr(false),
-            formatstr_scan(false),
-            formatstr_secure(false),
-            containerAction(Container::Action::NO_ACTION),
-            containerYield(Container::Yield::NO_YIELD)
-        {}
+        bool use{};
+        bool leakignore{};
+        bool isconst{};
+        bool ispure{};
+        UseRetValType useretval = UseRetValType::NONE;
+        bool ignore{};  // ignore functions/macros from a library (gtk, qt etc)
+        bool formatstr{};
+        bool formatstr_scan{};
+        bool formatstr_secure{};
+        Container::Action containerAction = Container::Action::NO_ACTION;
+        Container::Yield containerYield = Container::Yield::NO_YIELD;
+        std::string returnType;
     };
 
     const Function *getFunction(const Token *ftok) const;
@@ -402,15 +353,6 @@ public:
         const ArgumentChecks *arg = getarg(ftok, argnr);
         return arg ? arg->valid : emptyString;
     }
-
-    struct InvalidArgValue {
-        enum class Type {le, lt, eq, ge, gt, range} type;
-        std::string op1;
-        std::string op2;
-        bool isInt() const {
-            return MathLib::isInt(op1);
-        }
-    };
 
     const ArgumentChecks::IteratorInfo *getArgIteratorInfo(const Token *ftok, int argnr) const {
         const ArgumentChecks *arg = getarg(ftok, argnr);
@@ -490,26 +432,19 @@ public:
 
     std::unordered_map<std::string, SmartPointer> smartPointers;
     bool isSmartPointer(const Token *tok) const;
-    const SmartPointer* detectSmartPointer(const Token* tok) const;
+    const SmartPointer* detectSmartPointer(const Token* tok, bool withoutStd = false) const;
 
     struct PodType {
         unsigned int size;
         char sign;
         enum class Type { NO, BOOL, CHAR, SHORT, INT, LONG, LONGLONG } stdtype;
     };
-    const struct PodType *podtype(const std::string &name) const {
-        const std::unordered_map<std::string, struct PodType>::const_iterator it = mPodTypes.find(name);
+    const PodType *podtype(const std::string &name) const {
+        const std::unordered_map<std::string, PodType>::const_iterator it = mPodTypes.find(name);
         return (it != mPodTypes.end()) ? &(it->second) : nullptr;
     }
 
     struct PlatformType {
-        PlatformType()
-            : mSigned(false)
-            , mUnsigned(false)
-            , mLong(false)
-            , mPointer(false)
-            , mPtrPtr(false)
-            , mConstPtr(false) {}
         bool operator == (const PlatformType & type) const {
             return (mSigned == type.mSigned &&
                     mUnsigned == type.mUnsigned &&
@@ -523,17 +458,17 @@ public:
             return !(*this == type);
         }
         std::string mType;
-        bool mSigned;
-        bool mUnsigned;
-        bool mLong;
-        bool mPointer;
-        bool mPtrPtr;
-        bool mConstPtr;
+        bool mSigned{};
+        bool mUnsigned{};
+        bool mLong{};
+        bool mPointer{};
+        bool mPtrPtr{};
+        bool mConstPtr{};
     };
 
     struct Platform {
         const PlatformType *platform_type(const std::string &name) const {
-            const std::map<std::string, struct PlatformType>::const_iterator it = mPlatformTypes.find(name);
+            const std::map<std::string, PlatformType>::const_iterator it = mPlatformTypes.find(name);
             return (it != mPlatformTypes.end()) ? &(it->second) : nullptr;
         }
         std::map<std::string, PlatformType> mPlatformTypes;
@@ -565,6 +500,7 @@ public:
                            checkFiniteLifetime, // (unusedvar) object has side effects, but immediate destruction is wrong
     };
     TypeCheck getTypeCheck(std::string check, std::string typeName) const;
+    bool hasAnyTypeCheck(const std::string& typeName) const;
 
 private:
     // load a <function> xml node
@@ -591,7 +527,7 @@ private:
     };
     class CodeBlock {
     public:
-        CodeBlock() : mOffset(0) {}
+        CodeBlock() = default;
 
         void setStart(const char* s) {
             mStart = s;
@@ -621,11 +557,11 @@ private:
     private:
         std::string mStart;
         std::string mEnd;
-        int mOffset;
+        int mOffset{};
         std::set<std::string> mBlocks;
     };
     enum class FalseTrueMaybe { False, True, Maybe };
-    int mAllocId;
+    int mAllocId{};
     std::set<std::string> mFiles;
     std::map<std::string, AllocFunc> mAlloc; // allocation functions
     std::map<std::string, AllocFunc> mDealloc; // deallocation functions
@@ -643,7 +579,7 @@ private:
     std::map<std::string, ExportedFunctions> mExporters; // keywords that export variables/functions to libraries (meta-code/macros)
     std::map<std::string, std::set<std::string>> mImporters;  // keywords that import variables/functions
     std::map<std::string, int> mReflection; // invocation of reflection
-    std::unordered_map<std::string, struct PodType> mPodTypes; // pod types
+    std::unordered_map<std::string, PodType> mPodTypes; // pod types
     std::map<std::string, PlatformType> mPlatformTypes; // platform independent typedefs
     std::map<std::string, Platform> mPlatforms; // platform dependent typedefs
     std::map<std::pair<std::string,std::string>, TypeCheck> mTypeChecks;
@@ -652,7 +588,7 @@ private:
 
     const ArgumentChecks * getarg(const Token *ftok, int argnr) const;
 
-    std::string getFunctionName(const Token *ftok, bool *error) const;
+    std::string getFunctionName(const Token *ftok, bool &error) const;
 
     static const AllocFunc* getAllocDealloc(const std::map<std::string, AllocFunc> &data, const std::string &name) {
         const std::map<std::string, AllocFunc>::const_iterator it = data.find(name);
@@ -660,7 +596,7 @@ private:
     }
 
     enum DetectContainer { ContainerOnly, IteratorOnly, Both };
-    const Library::Container* detectContainerInternal(const Token* typeStart, DetectContainer detect, bool* isIterator = nullptr) const;
+    const Library::Container* detectContainerInternal(const Token* typeStart, DetectContainer detect, bool* isIterator = nullptr, bool withoutStd = false) const;
 };
 
 CPPCHECKLIB const Library::Container * getLibraryContainer(const Token * tok);

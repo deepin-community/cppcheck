@@ -2,7 +2,7 @@
 // Test library configuration for wxwidgets.cfg
 //
 // Usage:
-// $ ./cppcheck --check-library --library=wxwidgets --enable=style --error-exitcode=1 --suppress=missingIncludeSystem --inline-suppr test/cfg/wxwidgets.cpp
+// $ ./cppcheck --check-library --library=wxwidgets --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr test/cfg/wxwidgets.cpp
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
@@ -29,7 +29,7 @@
 #include <wx/textctrl.h>
 #include <wx/propgrid/property.h>
 
-void uninitvar_wxRegEx_GetMatch(wxRegEx &obj, size_t *start, size_t *len, size_t index)
+void uninitvar_wxRegEx_GetMatch(const wxRegEx &obj, size_t *start, size_t *len, size_t index)
 {
     size_t s,l;
     size_t *sPtr,*lPtr;
@@ -277,8 +277,9 @@ void invalidFunctionArg(const wxString &str)
 void uninitvar(wxWindow &w)
 {
     wxLogLevel logLevelUninit;
+    // cppcheck-suppress constVariable
     char cBufUninit[10];
-    char *pcUninit;
+    const char *pcUninit;
     bool uninitBool;
     // cppcheck-suppress uninitvar
     wxLogGeneric(logLevelUninit, "test");

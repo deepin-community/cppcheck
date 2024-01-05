@@ -32,7 +32,7 @@
 //---------------------------------------------------------------------------
 
 // CWE ids used
-static const struct CWE CWE398(398U);   // Indicator of Poor Code Quality
+static const CWE CWE398(398U);   // Indicator of Poor Code Quality
 
 // Register this check class (by creating a static instance of it)
 namespace {
@@ -43,6 +43,8 @@ void CheckAssert::assertWithSideEffects()
 {
     if (!mSettings->severity.isEnabled(Severity::warning))
         return;
+
+    logChecker("CheckAssert::assertWithSideEffects"); // warning
 
     for (const Token* tok = mTokenizer->list.front(); tok; tok = tok->next()) {
         if (!Token::simpleMatch(tok, "assert ("))

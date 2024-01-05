@@ -5,7 +5,7 @@ Index: cppcheck/gui/main.cpp
 ===================================================================
 --- cppcheck.orig/gui/main.cpp
 +++ cppcheck/gui/main.cpp
-@@ -56,6 +56,12 @@ int main(int argc, char *argv[])
+@@ -61,6 +61,12 @@ int main(int argc, char *argv[])
  
      QSettings* settings = new QSettings("Cppcheck", "Cppcheck-GUI", &app);
  

@@ -2,10 +2,12 @@
 // Test library configuration for posix.cfg
 //
 // Usage:
-// $ cppcheck --check-library --library=posix --enable=style --error-exitcode=1 --suppress=missingIncludeSystem --inline-suppr test/cfg/posix.c
+// $ cppcheck --check-library --library=posix --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr test/cfg/posix.c
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
+
+#define _BSD_SOURCE
 
 #include <aio.h>
 #include <stdio.h> // <- FILE
@@ -19,7 +21,7 @@
 #include <pwd.h>
 #include <dlfcn.h>
 #include <fcntl.h>
-// unavailable on some linux systems #include <ndbm.h>
+// #include <ndbm.h> // unavailable on some linux systems
 #include <netdb.h>
 #include <regex.h>
 #include <time.h>
@@ -28,20 +30,24 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <time.h>
+#if !(defined(__APPLE__) && defined(__MACH__))
 #include <mqueue.h>
-#define _XOPEN_SOURCE
+#endif
 #include <stdlib.h>
 #include <unistd.h>
 #include <wchar.h>
 #include <string.h>
 #include <strings.h>
 
+#if !(defined(__APPLE__) && defined(__MACH__))
 void nullPointer_mq_timedsend(mqd_t mqdes, const char* msg_ptr, size_t msg_len, unsigned msg_prio, const struct timespec* abs_timeout) {
     // cppcheck-suppress nullPointer
     (void) mq_timedsend(mqdes, NULL, msg_len, msg_prio, abs_timeout);
     // cppcheck-suppress nullPointer
     (void) mq_timedsend(mqdes, msg_ptr, msg_len, msg_prio, NULL);
 }
+#endif
 
 #if __TRACE_H__ // <trace.h>
 
@@ -82,7 +88,7 @@ int nullPointer_posix_trace_timedgetnext_event(trace_id_t trid, struct posix_tra
     return posix_trace_timedgetnext_event(trid, event, data, num_bytes, data_len, unavailable, abstime);
 }
 
-int nullPointer_posix_trace_getnext_event(trace_id_t trid, struct posix_trace_event_info *restrict event, void *restrict data, size_t num_bytes, size_t *restrict data_len, int *restrict unavailable)
+int nullPointer_posix_trace_getnext_event(trace_id_t trid, struct posix_trace_event_info *restrict event, const void *restrict data, size_t num_bytes, size_t *restrict data_len, int *restrict unavailable)
 {
     // cppcheck-suppress nullPointer
     (void) posix_trace_getnext_event(trid, NULL, data, num_bytes, data_len, unavailable);
@@ -113,7 +119,7 @@ void nullPointer_pthread_attr_getstack(const pthread_attr_t *attr, void *stackad
     (void) pthread_attr_getstack(NULL, NULL, NULL);
 }
 
-void nullPointer_pthread_attr_setstack(pthread_attr_t *attr) {
+void nullPointer_pthread_attr_setstack(const pthread_attr_t *attr) {
     // cppcheck-suppress nullPointer
     (void) pthread_attr_setstack(NULL, NULL, 0);
     (void) pthread_attr_setstack(attr, NULL, 0);
@@ -127,7 +133,7 @@ void nullPointer_setkey(const char *key)
     setkey(NULL);
 }
 
-void nullPointer_encrypt(char block[64], int edflag)
+void nullPointer_encrypt(const char block[64], int edflag)
 {
     // cppcheck-suppress nullPointer
     encrypt(NULL, edflag);
@@ -143,6 +149,7 @@ int nullPointer_getopt(int argc, char* const argv[], const char* optstring)
     return getopt(argc, argv, optstring);
 }
 
+#if !(defined(__APPLE__) && defined(__MACH__))
 int invalidFunctionArgStr_mq_send(mqd_t mqdes, const char *msg_ptr, size_t msg_len, unsigned msg_prio)
 {
     // No warning is expected for:
@@ -150,6 +157,7 @@ int invalidFunctionArgStr_mq_send(mqd_t mqdes, const char *msg_ptr, size_t msg_l
     (void) mq_send(mqdes, &msg, 1, 0);
     return mq_send(mqdes, msg_ptr, msg_len, 0);
 }
+#endif
 
 void invalidFunctionArgStr_mbsnrtowcs(void)
 {
@@ -160,6 +168,14 @@ void invalidFunctionArgStr_mbsnrtowcs(void)
     wcscpy (wenough, L"DEF");
     // No warning is expected for - #11119
     if (mbsnrtowcs (wenough, &cp, 1, 10, &s) != 1 || wcscmp (wenough, L"AEF") != 0) {}
+}
+
+struct tm * ignoredReturnValue_localtime(const time_t *tp)
+{
+    // cppcheck-suppress [ignoredReturnValue,localtimeCalled]
+    localtime(tp);
+    // cppcheck-suppress localtimeCalled
+    return localtime(tp);
 }
 
 int nullPointer_getpwuid_r(uid_t uid, struct passwd *pwd, char *buffer, size_t bufsize, struct passwd **result)
@@ -186,7 +202,7 @@ int nullPointer_getpwnam_r(const char *name, struct passwd *pwd, char *buffer, s
     return getpwnam_r(name, pwd, buffer, bufsize, result);
 }
 
-int nullPointer_fgetpwent_r(FILE *restrict stream, struct passwd *restrict pwbuf, char *restrict buf, size_t buflen, struct passwd **restrict pwbufp)
+int nullPointer_fgetpwent_r(FILE *restrict stream, const struct passwd *restrict pwbuf, char *restrict buf, size_t buflen, struct passwd **restrict pwbufp)
 {
     // cppcheck-suppress nullPointer
     (void) fgetpwent_r(NULL, pwbuf, buf, buflen, pwbufp);
@@ -199,7 +215,7 @@ int nullPointer_fgetpwent_r(FILE *restrict stream, struct passwd *restrict pwbuf
     return fgetpwent_r(stream, pwbuf, buf, buflen, pwbufp);
 }
 
-int nullPointer_getpwent_r(struct passwd *restrict pwbuf, char *restrict buf, size_t buflen, struct passwd **restrict pwbufp)
+int nullPointer_getpwent_r(const struct passwd *restrict pwbuf, char *restrict buf, size_t buflen, struct passwd **restrict pwbufp)
 {
     // cppcheck-suppress nullPointer
     (void) getpwent_r(NULL, buf, buflen, pwbufp);
@@ -295,7 +311,7 @@ int nullPointer_socketpair(int domain, int t, int protocol, int sv[2])
     return socketpair(domain, t, protocol, sv);
 }
 
-void nullPointer_lcong48(unsigned short param[7])
+void nullPointer_lcong48(const unsigned short param[7])
 {
     // cppcheck-suppress nullPointer
     (void) lcong48(NULL);
@@ -323,7 +339,14 @@ double nullPointer_erand48(unsigned short xsubi[3])
     return erand48(xsubi);
 }
 
-unsigned short *nullPointer_seed48(unsigned short seed16v[3])
+struct non_const_parameter_erand48_struct { unsigned short xsubi[3]; };
+// No warning is expected that dat can be const
+double non_const_parameter_erand48(struct non_const_parameter_erand48_struct *dat)
+{
+    return erand48(dat->xsubi);
+}
+
+unsigned short *nullPointer_seed48(const unsigned short seed16v[3])
 {
     // cppcheck-suppress nullPointer
     (void) seed48(NULL);
@@ -413,7 +436,7 @@ int nullPointer_wcsnlen(const wchar_t *s, size_t n)
 
 size_t bufferAccessOutOfBounds_wcsnlen(void) // #10997
 {
-    wchar_t buf[2]={L'4',L'2'};
+    const wchar_t buf[2]={L'4',L'2'};
     size_t len = wcsnlen(buf,2);
     // TODO cppcheck-suppress bufferAccessOutOfBounds
     len+=wcsnlen(buf,3);
@@ -492,6 +515,7 @@ int nullPointer_aio_suspend(const struct aiocb *const aiocb_list[], int nitems, 
     return aio_suspend(aiocb_list, nitems, timeout);
 }
 
+#ifdef __linux__
 // Note: Since glibc 2.28, this function symbol is no longer available to newly linked applications.
 void invalidFunctionArg_llseek(int fd, loff_t offset, int origin)
 {
@@ -522,6 +546,7 @@ void invalidFunctionArg_llseek(int fd, loff_t offset, int origin)
     // cppcheck-suppress llseekCalled
     (void)llseek(fd, offset, SEEK_END);
 }
+#endif
 
 void invalidFunctionArg_lseek64(int fd, off_t offset, int origin)
 {
@@ -606,7 +631,7 @@ char * overlappingWriteFunction_stpcpy(char *src, char *dest)
     return stpcpy(src, src);
 }
 
-int nullPointer_strcasecmp(char *a, char *b)
+int nullPointer_strcasecmp(const char *a, const char *b)
 {
     // No warning shall be shown:
     (void) strcasecmp(a, b);
@@ -616,7 +641,7 @@ int nullPointer_strcasecmp(char *a, char *b)
     return strcasecmp(NULL, b);
 }
 
-int nullPointer_strncasecmp(char *a, char *b, size_t n)
+int nullPointer_strncasecmp(const char *a, const char *b, size_t n)
 {
     // No warning shall be shown:
     (void) strncasecmp(a, b, n);
@@ -687,7 +712,7 @@ size_t nullPointer_strnlen(const char *s, size_t maxlen)
     return strnlen(NULL, maxlen);
 }
 
-char * nullPointer_stpcpy(char *src, char *dest)
+char * nullPointer_stpcpy(const char *src, char *dest)
 {
     // No warning shall be shown:
     (void) stpcpy(dest, src);
@@ -731,7 +756,7 @@ void nullPointer_bcopy(const void *src, void *dest, size_t n)
     bcopy(src, NULL, n);
 }
 
-void overlappingWriteFunction_memccpy(unsigned char *src, unsigned char *dest, int c, size_t count)
+void overlappingWriteFunction_memccpy(const unsigned char *src, unsigned char *dest, int c, size_t count)
 {
     // No warning shall be shown:
     (void)memccpy(dest, src, c, count);
@@ -761,7 +786,7 @@ wchar_t* overlappingWriteFunction_wcpncpy(wchar_t *src, wchar_t *dest, ssize_t n
 void overlappingWriteFunction_swab(char *src, char *dest, ssize_t n)
 {
     // No warning shall be shown:
-    swab(dest, src, n);
+    swab(src, dest, n);
     // cppcheck-suppress overlappingWriteFunction
     swab(src, src+3, 4);
 }
@@ -770,7 +795,7 @@ void bufferAccessOutOfBounds_swab(char *src, char *dest, ssize_t n)
 {
     // No warning shall be shown:
     swab(dest, src, n);
-    char srcBuf[42] = {0};
+    const char srcBuf[42] = {0};
     char destBuf[42] = {0};
     swab(srcBuf, dest, 42);
     // cppcheck-suppress bufferAccessOutOfBounds
@@ -864,6 +889,22 @@ void validCode(va_list valist_arg1, va_list valist_arg2)
     if (handle) {
         dlclose(handle);
     }
+}
+
+typedef struct {
+    size_t N;
+    int* data;
+} S_memalign;
+
+S_memalign* posix_memalign_memleak(size_t n) { // #12248
+    S_memalign* s = malloc(sizeof(*s));   
+    s->N = n;   
+    if (0 != posix_memalign((void**)&s->data, 16, n * sizeof(int))) {
+        free(s);
+        return NULL;
+    }
+    memset(s->data, 0, n * sizeof(int));
+    return s;
 }
 
 ssize_t nullPointer_send(int socket, const void *buf, size_t len, int flags)
@@ -976,8 +1017,7 @@ void memleak_getaddrinfo()
 
 void memleak_mmap(int fd)
 {
-    // cppcheck-suppress unusedAllocatedMemory
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [unusedAllocatedMemory, unreadVariable, constVariablePointer]
     void *addr = mmap(NULL, 255, PROT_NONE, MAP_PRIVATE, fd, 0);
     // cppcheck-suppress memleak
 }
@@ -1004,7 +1044,7 @@ int munmap_no_double_free(int tofd, // #11396
                           size_t len)
 {
     int rc;
-    void* fptr = mmap(NULL,len,PROT_READ|PROT_WRITE,MAP_SHARED,fromfd,(off_t)0);
+    const void* fptr = mmap(NULL,len,PROT_READ|PROT_WRITE,MAP_SHARED,fromfd,(off_t)0);
     if (fptr == MAP_FAILED) {
         return -1;
     }
@@ -1031,9 +1071,16 @@ int munmap_no_double_free(int tofd, // #11396
 
 void resourceLeak_fdopen(int fd)
 {
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [unreadVariable, constVariablePointer]
     FILE *f = fdopen(fd, "r");
     // cppcheck-suppress resourceLeak
+}
+
+void resourceLeak_fdopen2(const char* fn) // #2767
+{
+    int fi = open(fn, O_RDONLY);
+    FILE* fd = fdopen(fi, "r");
+    fclose(fd);
 }
 
 void resourceLeak_mkstemp(char *template)
@@ -1056,14 +1103,14 @@ int no_resourceLeak_mkstemp_02(char *template)
 
 void resourceLeak_fdopendir(int fd)
 {
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [unreadVariable, constVariablePointer]
     DIR* leak1 = fdopendir(fd);
     // cppcheck-suppress resourceLeak
 }
 
 void resourceLeak_opendir(void)
 {
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [unreadVariable, constVariablePointer]
     DIR* leak1 = opendir("abc");
     // cppcheck-suppress resourceLeak
 }
@@ -1101,18 +1148,12 @@ void noleak(int x, int y, int z)
     close(fd1);
     int fd2 = open("a", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     close(fd2);
-    /* TODO: add configuration for open/fdopen
-        // #2830
-        int fd = open("path", O_RDONLY);
-        FILE *f = fdopen(fd, "rt");
-        fclose(f);
-     */
 }
 
 
 // unused return value
 
-void ignoredReturnValue(void *addr, int fd)
+void ignoredReturnValue(const void *addr, int fd)
 {
     // cppcheck-suppress leakReturnValNotUsed
     mmap(addr, 255, PROT_NONE, MAP_PRIVATE, fd, 0);
@@ -1155,7 +1196,7 @@ void uninitvar(int fd)
     char buf[2];
     int decimal, sign;
     double d;
-    void *p;
+    const void *p;
     pthread_mutex_t mutex, mutex1, mutex2, mutex3;
     // cppcheck-suppress uninitvar
     write(x1,"ab",2);
@@ -1178,19 +1219,18 @@ void uninitvar(int fd)
     regcomp(&reg, pattern, cflags2);
     regerror(0, &reg, 0, 0);
 #ifndef __CYGWIN__
-    // cppcheck-suppress uninitvar
-    // cppcheck-suppress unreadVariable
-    // cppcheck-suppress ecvtCalled
+    // cppcheck-suppress [uninitvar, unreadVariable, ecvtCalled, constVariablePointer]
     char *buffer = ecvt(d, 11, &decimal, &sign);
 #endif
     // cppcheck-suppress gcvtCalled
     gcvt(3.141, 2, buf);
 
-    char *filename1, *filename2;
-    struct utimbuf *times;
+    const char *filename1, *filename2;
+    const struct utimbuf *times;
     // cppcheck-suppress uninitvar
     // cppcheck-suppress utimeCalled
     utime(filename1, times);
+    // cppcheck-suppress constVariable
     struct timeval times1[2];
     // cppcheck-suppress uninitvar
     // cppcheck-suppress utimeCalled
@@ -1235,17 +1275,18 @@ void uninitvar_types(void)
 {
     // cppcheck-suppress unassignedVariable
     blkcnt_t b;
-    // cppcheck-suppress uninitvar
+    // cppcheck-suppress [uninitvar,constStatement]
     b + 1;
 
     struct dirent d;
-    // TODO cppcheck-suppress uninitvar
+    // cppcheck-suppress constStatement - TODO: uninitvar
     d.d_ino + 1;
 }
 
-void timet_h(struct timespec* ptp1)
+void timet_h(const struct timespec* ptp1)
 {
     clockid_t clk_id1, clk_id2, clk_id3;
+    // cppcheck-suppress constVariablePointer
     struct timespec* ptp;
     // cppcheck-suppress uninitvar
     clock_settime(CLOCK_REALTIME, ptp);
@@ -1255,7 +1296,7 @@ void timet_h(struct timespec* ptp1)
     clock_settime(clk_id2, ptp1);
 
     struct timespec tp;
-    // cppcheck-suppress uninitvar
+    // FIXME cppcheck-suppress uninitvar
     clock_settime(CLOCK_REALTIME, &tp); // #6577 - false negative
     // cppcheck-suppress uninitvar
     clock_settime(clk_id3, &tp);
@@ -1273,21 +1314,21 @@ void dl(const char* libname, const char* func)
     // cppcheck-suppress resourceLeak
     lib = dlopen(libname, RTLD_LAZY);
     const char* funcname;
-    // cppcheck-suppress uninitvar
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [uninitvar, unreadVariable, constVariablePointer]
     void* sym = dlsym(lib, funcname);
     // cppcheck-suppress ignoredReturnValue
     dlsym(lib, "foo");
+    // cppcheck-suppress unassignedVariable
     void* uninit;
     // cppcheck-suppress uninitvar
     dlclose(uninit);
     // cppcheck-suppress resourceLeak
 }
 
-void asctime_r_test(struct tm * tm, char * bufSizeUnknown)
+void asctime_r_test(const struct tm * tm, char * bufSizeUnknown)
 {
     struct tm tm_uninit_data;
-    struct tm * tm_uninit_pointer;
+    const struct tm * tm_uninit_pointer;
     char bufSize5[5];
     char bufSize25[25];
     char bufSize26[26];
@@ -1315,10 +1356,10 @@ void asctime_r_test(struct tm * tm, char * bufSizeUnknown)
     asctime_r(tm, bufSizeUnknown);
 }
 
-void ctime_r_test(time_t * timep, char * bufSizeUnknown)
+void ctime_r_test(const time_t * timep, char * bufSizeUnknown)
 {
     time_t time_t_uninit_data;
-    time_t * time_t_uninit_pointer;
+    const time_t * time_t_uninit_pointer;
     char bufSize5[5];
     char bufSize25[25];
     char bufSize26[26];

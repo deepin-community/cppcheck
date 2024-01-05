@@ -23,6 +23,7 @@
 #include "common.h"
 #include "config.h"
 #include "erroritem.h"
+#include "errortypes.h"
 #include "path.h"
 #include "projectfile.h"
 #include "report.h"
@@ -31,62 +32,56 @@
 #include "threadhandler.h"
 #include "xmlreportv2.h"
 
-#include <string>
-#include <utility>
-
 #include <QAction>
 #include <QApplication>
 #include <QClipboard>
+#include <QContextMenuEvent>
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
 #include <QFileDialog>
+#include <QIcon>
+#include <QItemSelectionModel>
 #include <QKeyEvent>
 #include <QList>
+#include <QLocale>
 #include <QMap>
 #include <QMenu>
 #include <QMessageBox>
+#include <QModelIndex>
 #include <QProcess>
+#include <QSet>
 #include <QSettings>
 #include <QSignalMapper>
+#include <QStandardItem>
 #include <QUrl>
 #include <QVariant>
+#include <QVariantMap>
+#include <Qt>
 
-static const char COLUMN[] = "column";
-static const char CWE[] = "cwe";
-static const char ERRORID[] = "id";
-static const char FILENAME[] = "file";
-static const char FILE0[] = "file0";
-static const char HASH[] = "hash";
-static const char HIDE[] = "hide";
-static const char INCONCLUSIVE[] = "inconclusive";
-static const char LINE[] = "line";
-static const char MESSAGE[] = "message";
-static const char SEVERITY[] = "severity";
-static const char SINCEDATE[] = "sinceDate";
-static const char SYMBOLNAMES[] = "symbolNames";
-static const char SUMMARY[] = "summary";
-static const char TAGS[] = "tags";
+static constexpr char COLUMN[] = "column";
+static constexpr char CWE[] = "cwe";
+static constexpr char ERRORID[] = "id";
+static constexpr char FILENAME[] = "file";
+static constexpr char FILE0[] = "file0";
+static constexpr char HASH[] = "hash";
+static constexpr char HIDE[] = "hide";
+static constexpr char INCONCLUSIVE[] = "inconclusive";
+static constexpr char LINE[] = "line";
+static constexpr char MESSAGE[] = "message";
+static constexpr char SEVERITY[] = "severity";
+static constexpr char SINCEDATE[] = "sinceDate";
+static constexpr char SYMBOLNAMES[] = "symbolNames";
+static constexpr char SUMMARY[] = "summary";
+static constexpr char TAGS[] = "tags";
 
 // These must match column headers given in ResultsTree::translate()
-static const int COLUMN_SINCE_DATE = 6;
-static const int COLUMN_TAGS       = 7;
+static constexpr int COLUMN_SINCE_DATE = 6;
+static constexpr int COLUMN_TAGS       = 7;
 
 ResultsTree::ResultsTree(QWidget * parent) :
-    QTreeView(parent),
-    mSettings(nullptr),
-    mApplications(nullptr),
-    mContextItem(nullptr),
-    mShowFullPath(false),
-    mSaveFullPath(false),
-    mSaveAllErrors(true),
-    mShowErrorId(false),
-    mVisibleErrors(false),
-    mSelectionModel(nullptr),
-    mThread(nullptr),
-    mShowCppcheck(true),
-    mShowClang(true)
+    QTreeView(parent)
 {
     setModel(&mModel);
     translate(); // Adds columns to grid
@@ -95,9 +90,6 @@ ResultsTree::ResultsTree(QWidget * parent) :
 
     connect(this, &ResultsTree::doubleClicked, this, &ResultsTree::quickStartApplication);
 }
-
-ResultsTree::~ResultsTree()
-{}
 
 void ResultsTree::keyPressEvent(QKeyEvent *event)
 {
@@ -229,12 +221,11 @@ bool ResultsTree::addErrorItem(const ErrorItem &item)
             line.file = e.file;
             line.line = e.line;
             line.message = line.summary = e.info;
-            QStandardItem *child_item;
-            child_item = addBacktraceFiles(stditem,
-                                           line,
-                                           hide,
-                                           ":images/go-down.png",
-                                           true);
+            QStandardItem *child_item = addBacktraceFiles(stditem,
+                                                          line,
+                                                          hide,
+                                                          ":images/go-down.png",
+                                                          true);
             if (!child_item)
                 continue;
 
@@ -328,7 +319,7 @@ QStandardItem *ResultsTree::addBacktraceFiles(QStandardItem *parent,
     return list[0];
 }
 
-QString ResultsTree::severityToTranslatedString(Severity::SeverityType severity)
+QString ResultsTree::severityToTranslatedString(Severity severity)
 {
     switch (severity) {
     case Severity::style:
@@ -351,6 +342,9 @@ QString ResultsTree::severityToTranslatedString(Severity::SeverityType severity)
 
     case Severity::debug:
         return tr("debug");
+
+    case Severity::internal:
+        return tr("internal");
 
     case Severity::none:
     default:
@@ -652,8 +646,8 @@ void ResultsTree::contextMenuEvent(QContextMenuEvent * e)
             }
 
             //Create an action for the application
-            QAction *recheckSelectedFiles   = new QAction(tr("Recheck"), &menu);
-            QAction *copy                   = new QAction(tr("Copy"), &menu);
+            QAction *recheckAction          = new QAction(tr("Recheck"), &menu);
+            QAction *copyAction             = new QAction(tr("Copy"), &menu);
             QAction *hide                   = new QAction(tr("Hide"), &menu);
             QAction *hideallid              = new QAction(tr("Hide all with id"), &menu);
             QAction *opencontainingfolder   = new QAction(tr("Open containing folder"), &menu);
@@ -663,26 +657,31 @@ void ResultsTree::contextMenuEvent(QContextMenuEvent * e)
                 opencontainingfolder->setDisabled(true);
             }
             if (mThread->isChecking())
-                recheckSelectedFiles->setDisabled(true);
+                recheckAction->setDisabled(true);
             else
-                recheckSelectedFiles->setDisabled(false);
+                recheckAction->setDisabled(false);
 
-            menu.addAction(recheckSelectedFiles);
+            menu.addAction(recheckAction);
             menu.addSeparator();
-            menu.addAction(copy);
+            menu.addAction(copyAction);
             menu.addSeparator();
             menu.addAction(hide);
             menu.addAction(hideallid);
 
             QAction *suppress = new QAction(tr("Suppress selected id(s)"), &menu);
+            {
+                QVariantMap data = mContextItem->data().toMap();
+                const QString messageId = data[ERRORID].toString();
+                suppress->setEnabled(!ErrorLogger::isCriticalErrorId(messageId.toStdString()));
+            }
             menu.addAction(suppress);
             connect(suppress, &QAction::triggered, this, &ResultsTree::suppressSelectedIds);
 
             menu.addSeparator();
             menu.addAction(opencontainingfolder);
 
-            connect(recheckSelectedFiles, SIGNAL(triggered()), this, SLOT(recheckSelectedFiles()));
-            connect(copy, SIGNAL(triggered()), this, SLOT(copy()));
+            connect(recheckAction, SIGNAL(triggered()), this, SLOT(recheckAction()));
+            connect(copyAction, SIGNAL(triggered()), this, SLOT(copyAction()));
             connect(hide, SIGNAL(triggered()), this, SLOT(hideResult()));
             connect(hideallid, SIGNAL(triggered()), this, SLOT(hideAllIdResult()));
             connect(opencontainingfolder, SIGNAL(triggered()), this, SLOT(openContainingFolder()));
@@ -716,7 +715,7 @@ void ResultsTree::contextMenuEvent(QContextMenuEvent * e)
             mContextItem = mModel.itemFromIndex(index);
             if (mContextItem && mApplications->getApplicationCount() > 0 && mContextItem->parent()) {
                 //Disconnect all signals
-                for (QAction* action : actions) {
+                for (const QAction* action : actions) {
                     disconnect(action, SIGNAL(triggered()), signalMapper, SLOT(map()));
                 }
 
@@ -729,7 +728,7 @@ void ResultsTree::contextMenuEvent(QContextMenuEvent * e)
     }
 }
 
-void ResultsTree::startApplication(QStandardItem *target, int application)
+void ResultsTree::startApplication(const QStandardItem *target, int application)
 {
     //If there are no applications specified, tell the user about it
     if (mApplications->getApplicationCount() == 0) {
@@ -820,7 +819,15 @@ void ResultsTree::startApplication(QStandardItem *target, int application)
         const QString cmdLine = QString("%1 %2").arg(program).arg(params);
 
         // this is reported as deprecated in Qt 5.15.2 but no longer in Qt 6
-        const bool success = SUPPRESS_DEPRECATED_WARNING(QProcess::startDetached(cmdLine));
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+        SUPPRESS_WARNING_CLANG_PUSH("-Wdeprecated")
+        SUPPRESS_WARNING_GCC_PUSH("-Wdeprecated-declarations")
+#endif
+        const bool success = QProcess::startDetached(cmdLine);
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+        SUPPRESS_WARNING_GCC_POP
+            SUPPRESS_WARNING_CLANG_POP
+#endif
         if (!success) {
             QString text = tr("Could not start %1\n\nPlease check the application path and parameters are correct.").arg(program);
 
@@ -861,7 +868,7 @@ QString ResultsTree::askFileDir(const QString &file)
         return QString();
 
     // User selected root path
-    if (QFileInfo(dir + '/' + file).exists())
+    if (QFileInfo::exists(dir + '/' + file))
         mCheckPath = dir;
 
     // user selected checked folder
@@ -870,7 +877,7 @@ QString ResultsTree::askFileDir(const QString &file)
         QString folderName = file.mid(0, file.indexOf('/'));
         if (dir.indexOf('/' + folderName + '/'))
             dir = dir.mid(0, dir.lastIndexOf('/' + folderName + '/'));
-        if (QFileInfo(dir + '/' + file).exists())
+        if (QFileInfo::exists(dir + '/' + file))
             mCheckPath = dir;
     }
 
@@ -902,7 +909,7 @@ void ResultsTree::copy()
         QString inconclusive = data[INCONCLUSIVE].toBool() ? ",inconclusive" : "";
         text += '[' + data[FILENAME].toString() + ':' + QString::number(data[LINE].toInt())
                 + "] ("
-                + QString::fromStdString(Severity::toString(ShowTypes::ShowTypeToSeverity((ShowTypes::ShowType)data[SEVERITY].toInt()))) + inconclusive
+                + QString::fromStdString(severityToString(ShowTypes::ShowTypeToSeverity((ShowTypes::ShowType)data[SEVERITY].toInt()))) + inconclusive
                 + ") "
                 + data[MESSAGE].toString()
                 + " ["
@@ -1018,7 +1025,6 @@ void ResultsTree::suppressSelectedIds()
     if (!mSelectionModel)
         return;
 
-    QModelIndexList selectedRows = mSelectionModel->selectedRows();
     QSet<QString> selectedIds;
     for (QModelIndex index : mSelectionModel->selectedRows()) {
         QStandardItem *item = mModel.itemFromIndex(index);
@@ -1133,7 +1139,7 @@ void ResultsTree::quickStartApplication(const QModelIndex &index)
     startApplication(mModel.itemFromIndex(index));
 }
 
-QString ResultsTree::getFilePath(QStandardItem *target, bool fullPath)
+QString ResultsTree::getFilePath(const QStandardItem *target, bool fullPath)
 {
     if (target) {
         // Make sure we are working with the first column
@@ -1141,11 +1147,10 @@ QString ResultsTree::getFilePath(QStandardItem *target, bool fullPath)
             target = target->parent()->child(target->row(), 0);
 
         QVariantMap data = target->data().toMap();
-        QString pathStr;
 
         //Replace (file) with filename
         QString file = data[FILENAME].toString();
-        pathStr = QDir::toNativeSeparators(file);
+        QString pathStr = QDir::toNativeSeparators(file);
         if (!fullPath) {
             QFileInfo fi(pathStr);
             pathStr = fi.fileName();
@@ -1157,7 +1162,7 @@ QString ResultsTree::getFilePath(QStandardItem *target, bool fullPath)
     return QString();
 }
 
-QString ResultsTree::severityToIcon(Severity::SeverityType severity)
+QString ResultsTree::severityToIcon(Severity severity)
 {
     switch (severity) {
     case Severity::error:

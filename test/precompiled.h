@@ -17,8 +17,16 @@
  */
 
 #pragma once
-#include "fixture.h"
-#include "settings.h"
-#include "tokenize.h"
-#include "library.h"
+
+// IWYU pragma: begin_keep
 #include "check.h"
+#include "config.h"
+#include "importproject.h"
+#include "library.h"
+#include "mathlib.h"
+#include "settings.h"
+#include "timer.h"
+#include "token.h"
+#include "tokenlist.h"
+#include "tokenize.h"
+// IWYU pragma: end_keep

@@ -26,6 +26,7 @@
 #include "errorlogger.h"
 #include "library.h"
 #include "mathlib.h"
+#include "platform.h"
 #include "settings.h"
 #include "symboldatabase.h"
 #include "token.h"
@@ -37,10 +38,10 @@
 #include <cstdlib>
 #include <functional>
 #include <iterator>
-#include <memory>
 #include <numeric> // std::accumulate
 #include <sstream>
-#include <tinyxml2.h>
+
+#include "xml.h"
 
 //---------------------------------------------------------------------------
 
@@ -119,7 +120,7 @@ static int getMinFormatStringOutputLength(const std::vector<const Token*> &param
                 i_d_x_f_found = true;
                 parameterLength = 1;
                 if (inputArgNr < parameters.size() && parameters[inputArgNr]->hasKnownIntValue())
-                    parameterLength = MathLib::toString(parameters[inputArgNr]->getKnownIntValue()).length();
+                    parameterLength = std::to_string(parameters[inputArgNr]->getKnownIntValue()).length();
 
                 handleNextParameter = true;
                 break;
@@ -143,12 +144,14 @@ static int getMinFormatStringOutputLength(const std::vector<const Token*> &param
             outputStringSize++;
 
         if (handleNextParameter) {
+            // NOLINTNEXTLINE(cert-err34-c) - intentional use
             int tempDigits = std::abs(std::atoi(digits_string.c_str()));
             if (i_d_x_f_found)
                 tempDigits = std::max(tempDigits, 1);
 
             if (digits_string.find('.') != std::string::npos) {
                 const std::string endStr = digits_string.substr(digits_string.find('.') + 1);
+                // NOLINTNEXTLINE(cert-err34-c) - intentional use
                 const int maxLen = std::max(std::abs(std::atoi(endStr.c_str())), 1);
 
                 if (formatString[i] == 's') {
@@ -183,47 +186,46 @@ static int getMinFormatStringOutputLength(const std::vector<const Token*> &param
 
 //---------------------------------------------------------------------------
 
-static bool getDimensionsEtc(const Token * const arrayToken, const Settings *settings, std::vector<Dimension> * const dimensions, ErrorPath * const errorPath, bool * const mightBeLarger, MathLib::bigint* path)
+static bool getDimensionsEtc(const Token * const arrayToken, const Settings *settings, std::vector<Dimension> &dimensions, ErrorPath &errorPath, bool &mightBeLarger, MathLib::bigint &path)
 {
     const Token *array = arrayToken;
     while (Token::Match(array, ".|::"))
         array = array->astOperand2();
 
     if (array->variable() && array->variable()->isArray() && !array->variable()->dimensions().empty()) {
-        *dimensions = array->variable()->dimensions();
-        if (dimensions->size() >= 1 && ((*dimensions)[0].num <= 1 || !(*dimensions)[0].tok)) {
+        dimensions = array->variable()->dimensions();
+        if (dimensions[0].num <= 1 || !dimensions[0].tok) {
             visitAstNodes(arrayToken,
                           [&](const Token *child) {
                 if (child->originalName() == "->") {
-                    *mightBeLarger = true;
+                    mightBeLarger = true;
                     return ChildrenToVisit::none;
                 }
                 return ChildrenToVisit::op1_and_op2;
             });
         }
-    } else if (const Token *stringLiteral = array->getValueTokenMinStrSize(settings, path)) {
+    } else if (const Token *stringLiteral = array->getValueTokenMinStrSize(settings, &path)) {
         Dimension dim;
         dim.tok = nullptr;
         dim.num = Token::getStrArraySize(stringLiteral);
         dim.known = array->hasKnownValue();
-        dimensions->emplace_back(dim);
+        dimensions.emplace_back(dim);
     } else if (array->valueType() && array->valueType()->pointer >= 1 && (array->valueType()->isIntegral() || array->valueType()->isFloat())) {
         const ValueFlow::Value *value = getBufferSizeValue(array);
         if (!value)
             return false;
-        if (path)
-            *path = value->path;
-        *errorPath = value->errorPath;
+        path = value->path;
+        errorPath = value->errorPath;
         Dimension dim;
         dim.known = value->isKnown();
         dim.tok = nullptr;
-        const int typeSize = array->valueType()->typeSize(*settings, array->valueType()->pointer > 1);
+        const int typeSize = array->valueType()->typeSize(settings->platform, array->valueType()->pointer > 1);
         if (typeSize == 0)
             return false;
         dim.num = value->intvalue / typeSize;
-        dimensions->emplace_back(dim);
+        dimensions.emplace_back(dim);
     }
-    return !dimensions->empty();
+    return !dimensions.empty();
 }
 
 static ValueFlow::Value makeSizeValue(MathLib::bigint size, MathLib::bigint path)
@@ -279,6 +281,8 @@ static std::vector<ValueFlow::Value> getOverrunIndexValues(const Token* tok,
 
 void CheckBufferOverrun::arrayIndex()
 {
+    logChecker("CheckBufferOverrun::arrayIndex");
+
     for (const Token *tok = mTokenizer->tokens(); tok; tok = tok->next()) {
         if (tok->str() != "[")
             continue;
@@ -314,7 +318,7 @@ void CheckBufferOverrun::arrayIndex()
         ErrorPath errorPath;
         bool mightBeLarger = false;
         MathLib::bigint path = 0;
-        if (!getDimensionsEtc(tok->astOperand1(), mSettings, &dimensions, &errorPath, &mightBeLarger, &path))
+        if (!getDimensionsEtc(tok->astOperand1(), mSettings, dimensions, errorPath, mightBeLarger, path))
             continue;
 
         const Variable* const var = array->variable();
@@ -361,7 +365,7 @@ void CheckBufferOverrun::arrayIndex()
 static std::string stringifyIndexes(const std::string& array, const std::vector<ValueFlow::Value>& indexValues)
 {
     if (indexValues.size() == 1)
-        return MathLib::toString(indexValues[0].intvalue);
+        return std::to_string(indexValues[0].intvalue);
 
     std::ostringstream ret;
     ret << array;
@@ -382,7 +386,7 @@ static std::string arrayIndexMessage(const Token* tok,
                                      const Token* condition)
 {
     auto add_dim = [](const std::string &s, const Dimension &dim) {
-        return s + "[" + MathLib::toString(dim.num) + "]";
+        return s + "[" + std::to_string(dim.num) + "]";
     };
     const std::string array = std::accumulate(dimensions.cbegin(), dimensions.cend(), tok->astOperand1()->expressionString(), add_dim);
 
@@ -460,6 +464,8 @@ void CheckBufferOverrun::pointerArithmetic()
     if (!mSettings->severity.isEnabled(Severity::portability))
         return;
 
+    logChecker("CheckBufferOverrun::pointerArithmetic"); // portability
+
     for (const Token *tok = mTokenizer->tokens(); tok; tok = tok->next()) {
         if (!Token::Match(tok, "+|-"))
             continue;
@@ -486,7 +492,7 @@ void CheckBufferOverrun::pointerArithmetic()
         ErrorPath errorPath;
         bool mightBeLarger = false;
         MathLib::bigint path = 0;
-        if (!getDimensionsEtc(arrayToken, mSettings, &dimensions, &errorPath, &mightBeLarger, &path))
+        if (!getDimensionsEtc(arrayToken, mSettings, dimensions, errorPath, mightBeLarger, path))
             continue;
 
         if (tok->str() == "+") {
@@ -527,7 +533,7 @@ void CheckBufferOverrun::pointerArithmeticError(const Token *tok, const Token *i
 
     std::string errmsg;
     if (indexValue->condition)
-        errmsg = "Undefined behaviour, when '" + indexToken->expressionString() + "' is " + MathLib::toString(indexValue->intvalue) + " the pointer arithmetic '" + tok->expressionString() + "' is out of bounds.";
+        errmsg = "Undefined behaviour, when '" + indexToken->expressionString() + "' is " + std::to_string(indexValue->intvalue) + " the pointer arithmetic '" + tok->expressionString() + "' is out of bounds.";
     else
         errmsg = "Undefined behaviour, pointer arithmetic '" + tok->expressionString() + "' is out of bounds.";
 
@@ -565,11 +571,11 @@ ValueFlow::Value CheckBufferOverrun::getBufferSize(const Token *bufTok) const
     v.valueType = ValueFlow::Value::ValueType::BUFFER_SIZE;
 
     if (var->isPointerArray())
-        v.intvalue = dim * mSettings->sizeof_pointer;
+        v.intvalue = dim * mSettings->platform.sizeof_pointer;
     else if (var->isPointer())
         return ValueFlow::Value(-1);
     else {
-        const MathLib::bigint typeSize = bufTok->valueType()->typeSize(*mSettings);
+        const MathLib::bigint typeSize = bufTok->valueType()->typeSize(mSettings->platform);
         v.intvalue = dim * typeSize;
     }
 
@@ -625,6 +631,8 @@ static bool checkBufferSize(const Token *ftok, const Library::ArgumentChecks::Mi
 
 void CheckBufferOverrun::bufferOverflow()
 {
+    logChecker("CheckBufferOverrun::bufferOverflow");
+
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope * scope : symbolDatabase->functionScopes) {
         for (const Token *tok = scope->bodyStart; tok != scope->bodyEnd; tok = tok->next()) {
@@ -690,6 +698,8 @@ void CheckBufferOverrun::arrayIndexThenCheck()
     if (!mSettings->severity.isEnabled(Severity::portability))
         return;
 
+    logChecker("CheckBufferOverrun::arrayIndexThenCheck");
+
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope * const scope : symbolDatabase->functionScopes) {
         for (const Token *tok = scope->bodyStart; tok && tok != scope->bodyEnd; tok = tok->next()) {
@@ -745,6 +755,9 @@ void CheckBufferOverrun::stringNotZeroTerminated()
     // this is currently 'inconclusive'. See TestBufferOverrun::terminateStrncpy3
     if (!mSettings->severity.isEnabled(Severity::warning) || !mSettings->certainty.isEnabled(Certainty::inconclusive))
         return;
+
+    logChecker("CheckBufferOverrun::stringNotZeroTerminated"); // warning,inconclusive
+
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope * const scope : symbolDatabase->functionScopes) {
         for (const Token *tok = scope->bodyStart; tok && tok != scope->bodyEnd; tok = tok->next()) {
@@ -809,6 +822,8 @@ void CheckBufferOverrun::argumentSize()
     if (!mSettings->severity.isEnabled(Severity::warning))
         return;
 
+    logChecker("CheckBufferOverrun::argumentSize"); // warning
+
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope * const scope : symbolDatabase->functionScopes) {
         for (const Token *tok = scope->bodyStart; tok != scope->bodyEnd; tok = tok->next()) {
@@ -869,22 +884,41 @@ void CheckBufferOverrun::argumentSizeError(const Token *tok, const std::string &
 // CTU..
 //---------------------------------------------------------------------------
 
-std::string CheckBufferOverrun::MyFileInfo::toString() const
+// a Clang-built executable will crash when using the anonymous MyFileInfo later on - so put it in a unique namespace for now
+// see https://trac.cppcheck.net/ticket/12108 for more details
+#ifdef __clang__
+inline namespace CheckBufferOverrun_internal
+#else
+namespace
+#endif
 {
-    std::string xml;
-    if (!unsafeArrayIndex.empty())
-        xml = "    <array-index>\n" + CTU::toString(unsafeArrayIndex) + "    </array-index>\n";
-    if (!unsafePointerArith.empty())
-        xml += "    <pointer-arith>\n" + CTU::toString(unsafePointerArith) + "    </pointer-arith>\n";
-    return xml;
+    /** data for multifile checking */
+    class MyFileInfo : public Check::FileInfo {
+    public:
+        /** unsafe array index usage */
+        std::list<CTU::FileInfo::UnsafeUsage> unsafeArrayIndex;
+
+        /** unsafe pointer arithmetics */
+        std::list<CTU::FileInfo::UnsafeUsage> unsafePointerArith;
+
+        /** Convert data into xml string */
+        std::string toString() const override
+        {
+            std::string xml;
+            if (!unsafeArrayIndex.empty())
+                xml = "    <array-index>\n" + CTU::toString(unsafeArrayIndex) + "    </array-index>\n";
+            if (!unsafePointerArith.empty())
+                xml += "    <pointer-arith>\n" + CTU::toString(unsafePointerArith) + "    </pointer-arith>\n";
+            return xml;
+        }
+    };
 }
 
-bool CheckBufferOverrun::isCtuUnsafeBufferUsage(const Check *check, const Token *argtok, MathLib::bigint *offset, int type)
+bool CheckBufferOverrun::isCtuUnsafeBufferUsage(const Settings *settings, const Token *argtok, MathLib::bigint *offset, int type)
 {
-    const CheckBufferOverrun *c = dynamic_cast<const CheckBufferOverrun *>(check);
-    if (!c)
+    if (!offset)
         return false;
-    if (!argtok->valueType() || argtok->valueType()->typeSize(*c->mSettings) == 0)
+    if (!argtok->valueType() || argtok->valueType()->typeSize(settings->platform) == 0)
         return false;
     const Token *indexTok = nullptr;
     if (type == 1 && Token::Match(argtok, "%name% [") && argtok->astParent() == argtok->next() && !Token::simpleMatch(argtok->linkAt(1), "] ["))
@@ -897,29 +931,26 @@ bool CheckBufferOverrun::isCtuUnsafeBufferUsage(const Check *check, const Token 
         return false;
     if (!indexTok->hasKnownIntValue())
         return false;
-    if (!offset)
-        return false;
-    *offset = indexTok->getKnownIntValue() * argtok->valueType()->typeSize(*c->mSettings);
+    *offset = indexTok->getKnownIntValue() * argtok->valueType()->typeSize(settings->platform);
     return true;
 }
 
-bool CheckBufferOverrun::isCtuUnsafeArrayIndex(const Check *check, const Token *argtok, MathLib::bigint *offset)
+bool CheckBufferOverrun::isCtuUnsafeArrayIndex(const Settings *settings, const Token *argtok, MathLib::bigint *offset)
 {
-    return CheckBufferOverrun::isCtuUnsafeBufferUsage(check, argtok, offset, 1);
+    return isCtuUnsafeBufferUsage(settings, argtok, offset, 1);
 }
 
-bool CheckBufferOverrun::isCtuUnsafePointerArith(const Check *check, const Token *argtok, MathLib::bigint *offset)
+bool CheckBufferOverrun::isCtuUnsafePointerArith(const Settings *settings, const Token *argtok, MathLib::bigint *offset)
 {
-    return CheckBufferOverrun::isCtuUnsafeBufferUsage(check, argtok, offset, 2);
+    return isCtuUnsafeBufferUsage(settings, argtok, offset, 2);
 }
 
 /** @brief Parse current TU and extract file info */
 Check::FileInfo *CheckBufferOverrun::getFileInfo(const Tokenizer *tokenizer, const Settings *settings) const
 {
-    CheckBufferOverrun checkBufferOverrun(tokenizer, settings, nullptr);
     MyFileInfo *fileInfo = new MyFileInfo;
-    fileInfo->unsafeArrayIndex = CTU::getUnsafeUsage(tokenizer, settings, &checkBufferOverrun, isCtuUnsafeArrayIndex);
-    fileInfo->unsafePointerArith = CTU::getUnsafeUsage(tokenizer, settings, &checkBufferOverrun, isCtuUnsafePointerArith);
+    fileInfo->unsafeArrayIndex = CTU::getUnsafeUsage(tokenizer, settings, isCtuUnsafeArrayIndex);
+    fileInfo->unsafePointerArith = CTU::getUnsafeUsage(tokenizer, settings, isCtuUnsafePointerArith);
     if (fileInfo->unsafeArrayIndex.empty() && fileInfo->unsafePointerArith.empty()) {
         delete fileInfo;
         return nullptr;
@@ -929,6 +960,7 @@ Check::FileInfo *CheckBufferOverrun::getFileInfo(const Tokenizer *tokenizer, con
 
 Check::FileInfo * CheckBufferOverrun::loadFileInfoFromXml(const tinyxml2::XMLElement *xmlElement) const
 {
+    // cppcheck-suppress shadowFunction - TODO: fix this
     const std::string arrayIndex("array-index");
     const std::string pointerArith("pointer-arith");
 
@@ -956,9 +988,13 @@ bool CheckBufferOverrun::analyseWholeProgram(const CTU::FileInfo *ctu, const std
     bool foundErrors = false;
     (void)settings; // This argument is unused
 
+    CheckBufferOverrun dummy(nullptr, &settings, &errorLogger);
+    dummy.
+    logChecker("CheckBufferOverrun::analyseWholeProgram");
+
     const std::map<std::string, std::list<const CTU::FileInfo::CallBase *>> callsMap = ctu->getCallsMap();
 
-    for (Check::FileInfo *fi1 : fileInfo) {
+    for (const Check::FileInfo* fi1 : fileInfo) {
         const MyFileInfo *fi = dynamic_cast<const MyFileInfo*>(fi1);
         if (!fi)
             continue;
@@ -991,13 +1027,13 @@ bool CheckBufferOverrun::analyseWholeProgram1(const std::map<std::string, std::l
     if (type == 1) {
         errorId = "ctuArrayIndex";
         if (unsafeUsage.value > 0)
-            errmsg = "Array index out of bounds; '" + unsafeUsage.myArgumentName + "' buffer size is " + MathLib::toString(functionCall->callArgValue) + " and it is accessed at offset " + MathLib::toString(unsafeUsage.value) + ".";
+            errmsg = "Array index out of bounds; '" + unsafeUsage.myArgumentName + "' buffer size is " + std::to_string(functionCall->callArgValue) + " and it is accessed at offset " + std::to_string(unsafeUsage.value) + ".";
         else
-            errmsg = "Array index out of bounds; buffer '" + unsafeUsage.myArgumentName + "' is accessed at offset " + MathLib::toString(unsafeUsage.value) + ".";
+            errmsg = "Array index out of bounds; buffer '" + unsafeUsage.myArgumentName + "' is accessed at offset " + std::to_string(unsafeUsage.value) + ".";
         cwe = (unsafeUsage.value > 0) ? CWE_BUFFER_OVERRUN : CWE_BUFFER_UNDERRUN;
     } else {
         errorId = "ctuPointerArith";
-        errmsg = "Pointer arithmetic overflow; '" + unsafeUsage.myArgumentName + "' buffer size is " + MathLib::toString(functionCall->callArgValue);
+        errmsg = "Pointer arithmetic overflow; '" + unsafeUsage.myArgumentName + "' buffer size is " + std::to_string(functionCall->callArgValue);
         cwe = CWE_POINTER_ARITHMETIC_OVERFLOW;
     }
 
@@ -1014,6 +1050,7 @@ bool CheckBufferOverrun::analyseWholeProgram1(const std::map<std::string, std::l
 
 void CheckBufferOverrun::objectIndex()
 {
+    logChecker("CheckBufferOverrun::objectIndex");
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope *functionScope : symbolDatabase->functionScopes) {
         for (const Token *tok = functionScope->bodyStart; tok != functionScope->bodyEnd; tok = tok->next()) {
@@ -1052,7 +1089,7 @@ void CheckBufferOverrun::objectIndex()
                         continue;
                 }
                 if (obj->valueType() && var->valueType() && (obj->isCast() || (mTokenizer->isCPP() && isCPPCast(obj)) || obj->valueType()->pointer)) { // allow cast to a different type
-                    const auto varSize = var->valueType()->typeSize(*mSettings);
+                    const auto varSize = var->valueType()->typeSize(mSettings->platform);
                     if (varSize == 0)
                         continue;
                     if (obj->valueType()->type != var->valueType()->type) {
@@ -1073,8 +1110,7 @@ void CheckBufferOverrun::objectIndex()
                     if (std::any_of(idxValues.cbegin(), idxValues.cend(), [&](const ValueFlow::Value& vidx) {
                         if (vidx.isImpossible())
                             return (vidx.intvalue == 0);
-                        else
-                            return (vidx.intvalue != 0);
+                        return (vidx.intvalue != 0);
                     })) {
                         objectIndexError(tok, &v, idx->hasKnownIntValue());
                     }
@@ -1112,18 +1148,17 @@ static bool isVLAIndex(const Token* tok)
         return true;
     if (tok->str() == "?") {
         // this is a VLA index if both expressions around the ":" is VLA index
-        if (tok->astOperand2() &&
-            tok->astOperand2()->str() == ":" &&
-            isVLAIndex(tok->astOperand2()->astOperand1()) &&
-            isVLAIndex(tok->astOperand2()->astOperand2()))
-            return true;
-        return false;
+        return tok->astOperand2() &&
+               tok->astOperand2()->str() == ":" &&
+               isVLAIndex(tok->astOperand2()->astOperand1()) &&
+               isVLAIndex(tok->astOperand2()->astOperand2());
     }
     return isVLAIndex(tok->astOperand1()) || isVLAIndex(tok->astOperand2());
 }
 
 void CheckBufferOverrun::negativeArraySize()
 {
+    logChecker("CheckBufferOverrun::negativeArraySize");
     const SymbolDatabase* symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Variable* var : symbolDatabase->variableList()) {
         if (!var || !var->isArray())
@@ -1157,7 +1192,7 @@ void CheckBufferOverrun::negativeArraySizeError(const Token* tok)
     const std::string line1 = arrayName.empty() ? std::string() : ("$symbol:" + arrayName + '\n');
     reportError(tok, Severity::error, "negativeArraySize",
                 line1 +
-                "Declaration of array '" + arrayName + "' with negative size is undefined behaviour", CWE758, Certainty::safe);
+                "Declaration of array '" + arrayName + "' with negative size is undefined behaviour", CWE758, Certainty::normal);
 }
 
 void CheckBufferOverrun::negativeMemoryAllocationSizeError(const Token* tok, const ValueFlow::Value* value)
@@ -1166,5 +1201,5 @@ void CheckBufferOverrun::negativeMemoryAllocationSizeError(const Token* tok, con
     const ErrorPath errorPath = getErrorPath(tok, value, msg);
     const bool inconclusive = value != nullptr && !value->isKnown();
     reportError(errorPath, inconclusive ? Severity::warning : Severity::error, "negativeMemoryAllocationSize",
-                msg, CWE131, inconclusive ? Certainty::inconclusive : Certainty::safe);
+                msg, CWE131, inconclusive ? Certainty::inconclusive : Certainty::normal);
 }

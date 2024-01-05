@@ -25,16 +25,16 @@
 #include <QColor>
 #include <QComboBox>
 #include <QFont>
+#include <QObject>
 #include <QPushButton>
+#include <QString>
 
-class QObject;
 class QWidget;
 
 class SelectColorButton : public QPushButton {
     Q_OBJECT
 public:
     explicit SelectColorButton(QWidget* parent);
-    ~SelectColorButton() override {}
 
     void setColor(const QColor& color);
     const QColor& getColor();
@@ -56,21 +56,20 @@ class SelectFontWeightCombo : public QComboBox {
     Q_OBJECT
 public:
     explicit SelectFontWeightCombo(QWidget* parent);
-    ~SelectFontWeightCombo() override {}
 
-    void setWeight(const QFont::Weight& weight);
+    void setWeight(QFont::Weight weight);
     const QFont::Weight& getWeight();
 
 signals:
     // NOLINTNEXTLINE(readability-inconsistent-declaration-parameter-name) - caused by generated MOC code
-    void weightChanged(const QFont::Weight& newWeight);
+    void weightChanged(QFont::Weight newWeight);
 
 public slots:
     void updateWeight();
     void changeWeight(int index);
 
 private:
-    QFont::Weight mWeight;
+    QFont::Weight mWeight = QFont::Normal;
 };
 
 #endif  //CODEEDITORSTYLECONTROLS_H

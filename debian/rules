@@ -9,19 +9,11 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+bindnow
 
 export DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
-export QT_SELECT := qt5
+export QT_SELECT := qt6
 
 # See http://wiki.debian.org/Hardening#Notes_for_packages_using_CMake
 CFLAGS   := $(CFLAGS) $(CPPFLAGS)
 CXXFLAGS := $(CXXFLAGS) $(CPPFLAGS)
-
-# Disable QtCharts on ia64, powerpc, and sparc64.
-QTCHART_OFF_ARCHITECTURES := ia64 powerpc sparc64
-ifneq (,$(findstring $(DEB_HOST_ARCH), $(QTCHART_OFF_ARCHITECTURES)))
-  QTCHART_FLAG := OFF
-else
-  QTCHART_FLAG := ON
-endif
 
 %:
 	dh $@ --buildsystem=cmake --builddirectory=build
@@ -32,10 +24,11 @@ override_dh_auto_configure:
 	  -DCMAKE_BUILD_TYPE=Release \
 	  -DUSE_BUNDLED_TINYXML2=OFF \
 	  -DUSE_MATCHCOMPILER=ON \
-	  -DHAVE_RULES=ON \
+	  -DHAVE_RULES=OFF \
 	  -DBUILD_TESTS=ON \
 	  -DBUILD_GUI=ON \
-	  -DWITH_QCHART=$(QTCHART_FLAG) \
+	  -DWITH_QCHART=ON \
+	  -DUSE_QT6=ON \
 	  -DFILESDIR=/usr/lib/$(DEB_HOST_MULTIARCH)/cppcheck
 
 override_dh_auto_build:
@@ -66,3 +59,4 @@ override_dh_dwz:
 override_dh_clean:
 	dh_clean
 	[ ! -e backup ] || (cp backup/Makefile .; cp backup/*.ts gui; rm backup/*; rmdir backup)
+	rm -f plist*.plist

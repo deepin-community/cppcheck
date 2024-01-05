@@ -18,29 +18,24 @@
 
 #include "checkclass.h"
 #include "errortypes.h"
+#include "helpers.h"
 #include "platform.h"
 #include "settings.h"
 #include "fixture.h"
 #include "tokenize.h"
 
-#include <map>
 #include <sstream> // IWYU pragma: keep
 #include <string>
-#include <utility>
 #include <vector>
-
-#include <simplecpp.h>
 
 class TestUnusedPrivateFunction : public TestFixture {
 public:
     TestUnusedPrivateFunction() : TestFixture("TestUnusedPrivateFunction") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().severity(Severity::style).build();
 
     void run() override {
-        settings.severity.enable(Severity::style);
-
         TEST_CASE(test1);
         TEST_CASE(test2);
         TEST_CASE(test3);
@@ -91,34 +86,24 @@ private:
         TEST_CASE(maybeUnused);
     }
 
-
-    void check(const char code[], Settings::PlatformType platform = Settings::Native) {
+#define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
+    void check_(const char* file, int line, const char code[], Platform::Type platform = Platform::Type::Native) {
         // Clear the error buffer..
         errout.str("");
 
-        settings.platform(platform);
+        const Settings settings1 = settingsBuilder(settings).platform(platform).build();
 
-        // Raw tokens..
         std::vector<std::string> files(1, "test.cpp");
-        std::istringstream istr(code);
-        const simplecpp::TokenList tokens1(istr, files, files[0]);
-
-        // Preprocess..
-        simplecpp::TokenList tokens2(files);
-        std::map<std::string, simplecpp::TokenList*> filedata;
-        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
+        Tokenizer tokenizer(&settings1, this);
+        PreprocessorHelper::preprocess(code, files, tokenizer);
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
-        tokenizer.createTokens(std::move(tokens2));
-        tokenizer.simplifyTokens1("");
+        ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
 
         // Check for unused private functions..
-        CheckClass checkClass(&tokenizer, &settings, this);
+        CheckClass checkClass(&tokenizer, &settings1, this);
         checkClass.privateFunctions();
     }
-
-
 
     void test1() {
         check("class Fred\n"
@@ -621,7 +606,7 @@ private:
               "public:\n"
               "    Foo() { }\n"
               "    __property int x = {read=getx}\n"
-              "};", Settings::Win32A);
+              "};", Platform::Type::Win32A);
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -634,7 +619,7 @@ private:
               "    }\n"
               "public:\n"
               "    Foo() { }\n"
-              "};", Settings::Win32A);
+              "};", Platform::Type::Win32A);
         ASSERT_EQUALS("", errout.str());
     }
 

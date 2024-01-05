@@ -25,24 +25,31 @@
 
 #include <algorithm>
 #include <cstdlib>
-#include <fstream>
+#include <sys/stat.h>
 #include <utility>
+
+#include <simplecpp.h>
 
 #ifndef _WIN32
 #include <unistd.h>
 #else
 #include <direct.h>
+#include <windows.h>
 #endif
 #if defined(__CYGWIN__)
 #include <strings.h>
 #endif
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
-#include <simplecpp.h>
 
 /** Is the filesystem case insensitive? */
-static bool caseInsensitiveFilesystem()
+static constexpr bool caseInsensitiveFilesystem()
 {
-#ifdef _WIN32
+#if defined(_WIN32) || (defined(__APPLE__) && defined(__MACH__))
+    // Windows is case insensitive
+    // MacOS is case insensitive by default (also supports case sensitivity)
     return true;
 #else
     // TODO: Non-windows filesystems might be case insensitive
@@ -53,11 +60,11 @@ static bool caseInsensitiveFilesystem()
 std::string Path::toNativeSeparators(std::string path)
 {
 #if defined(_WIN32)
-    const char separ = '/';
-    const char native = '\\';
+    constexpr char separ = '/';
+    constexpr char native = '\\';
 #else
-    const char separ = '\\';
-    const char native = '/';
+    constexpr char separ = '\\';
+    constexpr char native = '/';
 #endif
     std::replace(path.begin(), path.end(), separ, native);
     return path;
@@ -65,8 +72,8 @@ std::string Path::toNativeSeparators(std::string path)
 
 std::string Path::fromNativeSeparators(std::string path)
 {
-    const char nonnative = '\\';
-    const char newsepar = '/';
+    constexpr char nonnative = '\\';
+    constexpr char newsepar = '/';
     std::replace(path.begin(), path.end(), nonnative, newsepar);
     return path;
 }
@@ -131,6 +138,29 @@ std::string Path::getCurrentPath()
     return "";
 }
 
+std::string Path::getCurrentExecutablePath(const char* fallback)
+{
+    char buf[4096] = {};
+    bool success{};
+#ifdef _WIN32
+    success = (GetModuleFileNameA(nullptr, buf, sizeof(buf)) < sizeof(buf));
+#elif defined(__APPLE__)
+    uint32_t size = sizeof(buf);
+    success = (_NSGetExecutablePath(buf, &size) == 0);
+#else
+    const char* procPath =
+#ifdef __SVR4 // Solaris
+        "/proc/self/path/a.out";
+#elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
+        "/proc/curproc/file";
+#else // Linux
+        "/proc/self/exe";
+#endif
+    success = (readlink(procPath, buf, sizeof(buf)) != -1);
+#endif
+    return success ? std::string(buf) : std::string(fallback);
+}
+
 bool Path::isAbsolute(const std::string& path)
 {
     const std::string& nativePath = toNativeSeparators(path);
@@ -140,14 +170,10 @@ bool Path::isAbsolute(const std::string& path)
         return false;
 
     // On Windows, 'C:\foo\bar' is an absolute path, while 'C:foo\bar' is not
-    if (nativePath.compare(0, 2, "\\\\") == 0 || (std::isalpha(nativePath[0]) != 0 && nativePath.compare(1, 2, ":\\") == 0))
-        return true;
+    return startsWith(nativePath, "\\\\") || (std::isalpha(nativePath[0]) != 0 && nativePath.compare(1, 2, ":\\") == 0);
 #else
-    if (!nativePath.empty() && nativePath[0] == '/')
-        return true;
+    return !nativePath.empty() && nativePath[0] == '/';
 #endif
-
-    return false;
 }
 
 std::string Path::getRelativePath(const std::string& absolutePath, const std::vector<std::string>& basePaths)
@@ -161,7 +187,7 @@ std::string Path::getRelativePath(const std::string& absolutePath, const std::ve
 
         if (endsWith(bp,'/'))
             return absolutePath.substr(bp.length());
-        else if (absolutePath.size() > bp.size() && absolutePath[bp.length()] == '/')
+        if (absolutePath.size() > bp.size() && absolutePath[bp.length()] == '/')
             return absolutePath.substr(bp.length() + 1);
     }
     return absolutePath;
@@ -200,7 +226,7 @@ bool Path::acceptFile(const std::string &path, const std::set<std::string> &extr
 bool Path::isHeader(const std::string &path)
 {
     const std::string extension = getFilenameExtensionInLowerCase(path);
-    return (extension.compare(0, 2, ".h") == 0);
+    return startsWith(extension, ".h");
 }
 
 std::string Path::getAbsoluteFilePath(const std::string& filePath)
@@ -224,9 +250,9 @@ std::string Path::getAbsoluteFilePath(const std::string& filePath)
 std::string Path::stripDirectoryPart(const std::string &file)
 {
 #if defined(_WIN32) && !defined(__MINGW32__)
-    const char native = '\\';
+    constexpr char native = '\\';
 #else
-    const char native = '/';
+    constexpr char native = '/';
 #endif
 
     const std::string::size_type p = file.rfind(native);
@@ -236,13 +262,29 @@ std::string Path::stripDirectoryPart(const std::string &file)
     return file;
 }
 
-bool Path::fileExists(const std::string &file)
+#ifdef _WIN32
+using mode_t = unsigned short;
+#endif
+
+static mode_t file_type(const std::string &path)
 {
-    std::ifstream f(file.c_str());
-    return f.is_open();
+    struct stat file_stat;
+    if (stat(path.c_str(), &file_stat) == -1)
+        return 0;
+    return file_stat.st_mode & S_IFMT;
 }
 
-std::string Path::join(std::string path1, std::string path2) {
+bool Path::isFile(const std::string &path)
+{
+    return file_type(path) == S_IFREG;
+}
+
+bool Path::isDirectory(const std::string &path)
+{
+    return file_type(path) == S_IFDIR;
+}
+
+std::string Path::join(const std::string& path1, const std::string& path2) {
     if (path1.empty() || path2.empty())
         return path1 + path2;
     if (path2.front() == '/')

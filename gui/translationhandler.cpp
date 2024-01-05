@@ -22,15 +22,17 @@
 #include "common.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QLocale>
 #include <QMessageBox>
 #include <QTranslator>
+#include <QtGlobal>
 
 
 // Provide own translations for standard buttons. This (garbage) code is needed to enforce them to appear in .ts files even after "lupdate gui.pro"
-static UNUSED void unused()
+UNUSED static void unused()
 {
     Q_UNUSED(QT_TRANSLATE_NOOP("QPlatformTheme", "OK"))
     Q_UNUSED(QT_TRANSLATE_NOOP("QPlatformTheme", "Cancel"))
@@ -40,12 +42,12 @@ static UNUSED void unused()
 
 TranslationHandler::TranslationHandler(QObject *parent) :
     QObject(parent),
-    mCurrentLanguage("en"),
-    mTranslator(nullptr)
+    mCurrentLanguage("en")
 {
     // Add our available languages
     // Keep this list sorted
     addTranslation("Chinese (Simplified)", "cppcheck_zh_CN");
+    addTranslation("Chinese (Traditional)", "cppcheck_zh_TW");
     addTranslation("Dutch", "cppcheck_nl");
     addTranslation("English", "cppcheck_en");
     addTranslation("Finnish", "cppcheck_fi");
@@ -59,9 +61,6 @@ TranslationHandler::TranslationHandler(QObject *parent) :
     addTranslation("Spanish", "cppcheck_es");
     addTranslation("Swedish", "cppcheck_sv");
 }
-
-TranslationHandler::~TranslationHandler()
-{}
 
 bool TranslationHandler::setLanguage(const QString &code)
 {
@@ -88,7 +87,7 @@ bool TranslationHandler::setLanguage(const QString &code)
         failure = true;
     } else {
         // Make sure there is a translator
-        if (!mTranslator && !failure)
+        if (!mTranslator)
             mTranslator = new QTranslator(this);
 
         //Load the new language
@@ -106,18 +105,19 @@ bool TranslationHandler::setLanguage(const QString &code)
         else
             translationFile = appPath + "/" + mTranslations[index].mFilename + ".qm";
 
-        if (!mTranslator->load(translationFile) && !failure) {
+        if (!mTranslator->load(translationFile)) {
+            failure = true;
             //If it failed, lets check if the default file exists
             if (!QFile::exists(translationFile)) {
                 error = QObject::tr("Language file %1 not found!");
                 error = error.arg(translationFile);
-                failure = true;
             }
-
-            //If file exists, there's something wrong with it
-            error = QObject::tr("Failed to load translation for language %1 from file %2");
-            error = error.arg(mTranslations[index].mName);
-            error = error.arg(translationFile);
+            else {
+                //If file exists, there's something wrong with it
+                error = QObject::tr("Failed to load translation for language %1 from file %2");
+                error = error.arg(mTranslations[index].mName);
+                error = error.arg(translationFile);
+            }
         }
     }
 
@@ -178,10 +178,7 @@ int TranslationHandler::getLanguageIndexByCode(const QString &code) const
 {
     int index = -1;
     for (int i = 0; i < mTranslations.size(); i++) {
-        if (mTranslations[i].mCode == code) {
-            index = i;
-            break;
-        } else if (mTranslations[i].mCode == code.left(2)) {
+        if (mTranslations[i].mCode == code || mTranslations[i].mCode == code.left(2)) {
             index = i;
             break;
         }

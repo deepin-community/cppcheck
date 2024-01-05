@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,14 @@
 
 #include <QDebug>
 #include <QDir>
+#include <QFile>
+#include <QXmlStreamAttributes>
+#include <QXmlStreamReader>
 #include <QXmlStreamWriter>
+
+#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
+#include <QStringRef>
+#endif
 
 static const QString ResultElementName = "results";
 static const QString CppcheckElementName = "cppcheck";
@@ -189,7 +196,7 @@ QList<ErrorItem> XmlReportV2::read()
     return errors;
 }
 
-ErrorItem XmlReportV2::readError(QXmlStreamReader *reader)
+ErrorItem XmlReportV2::readError(const QXmlStreamReader *reader)
 {
     /*
        Error example from the core program in xml

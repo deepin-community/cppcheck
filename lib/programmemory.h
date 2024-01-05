@@ -29,7 +29,9 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
+class Scope;
 class Token;
 class Settings;
 
@@ -41,7 +43,7 @@ struct ExprIdToken {
     ExprIdToken() = default;
     // cppcheck-suppress noExplicitConstructor
     // NOLINTNEXTLINE(google-explicit-constructor)
-    ExprIdToken(const Token* tok) : tok(tok) {}
+    ExprIdToken(const Token* tok);
     // TODO: Make this constructor only available from ProgramMemory
     // cppcheck-suppress noExplicitConstructor
     // NOLINTNEXTLINE(google-explicit-constructor)
@@ -53,10 +55,40 @@ struct ExprIdToken {
         return getExpressionId() == rhs.getExpressionId();
     }
 
+    bool operator<(const ExprIdToken& rhs) const {
+        return getExpressionId() < rhs.getExpressionId();
+    }
+
     template<class T, class U>
     friend bool operator!=(const T& lhs, const U& rhs)
     {
         return !(lhs == rhs);
+    }
+
+    template<class T, class U>
+    friend bool operator<=(const T& lhs, const U& rhs)
+    {
+        return !(lhs > rhs);
+    }
+
+    template<class T, class U>
+    friend bool operator>(const T& lhs, const U& rhs)
+    {
+        return rhs < lhs;
+    }
+
+    template<class T, class U>
+    friend bool operator>=(const T& lhs, const U& rhs)
+    {
+        return !(lhs < rhs);
+    }
+
+    const Token& operator*() const NOEXCEPT {
+        return *tok;
+    }
+
+    const Token* operator->() const NOEXCEPT {
+        return tok;
     }
 
     struct Hash {
@@ -74,11 +106,11 @@ struct ProgramMemory {
     void setValue(const Token* expr, const ValueFlow::Value& value);
     const ValueFlow::Value* getValue(nonneg int exprid, bool impossible = false) const;
 
-    bool getIntValue(nonneg int exprid, MathLib::bigint* result) const;
+    bool getIntValue(nonneg int exprid, MathLib::bigint& result) const;
     void setIntValue(const Token* expr, MathLib::bigint value, bool impossible = false);
 
-    bool getContainerSizeValue(nonneg int exprid, MathLib::bigint* result) const;
-    bool getContainerEmptyValue(nonneg int exprid, MathLib::bigint* result) const;
+    bool getContainerSizeValue(nonneg int exprid, MathLib::bigint& result) const;
+    bool getContainerEmptyValue(nonneg int exprid, MathLib::bigint& result) const;
     void setContainerSizeValue(const Token* expr, MathLib::bigint value, bool isEqual = true);
 
     void setUnknown(const Token* expr);
@@ -117,6 +149,14 @@ struct ProgramMemory {
         return mValues.end();
     }
 
+    friend bool operator==(const ProgramMemory& x, const ProgramMemory& y) {
+        return x.mValues == y.mValues;
+    }
+
+    friend bool operator!=(const ProgramMemory& x, const ProgramMemory& y) {
+        return x.mValues != y.mValues;
+    }
+
 private:
     Map mValues;
 };
@@ -142,8 +182,10 @@ struct ProgramMemoryState {
     ProgramMemory get(const Token* tok, const Token* ctx, const ProgramMemory::Map& vars) const;
 };
 
+std::vector<ValueFlow::Value> execute(const Scope* scope, ProgramMemory& pm, const Settings* settings);
+
 void execute(const Token* expr,
-             ProgramMemory* const programMemory,
+             ProgramMemory& programMemory,
              MathLib::bigint* result,
              bool* error,
              const Settings* settings = nullptr);
@@ -153,21 +195,19 @@ void execute(const Token* expr,
  * \param condition   top ast token in condition
  * \param pm   program memory
  */
-bool conditionIsFalse(const Token* condition, ProgramMemory pm, const Settings* settings = nullptr);
+bool conditionIsFalse(const Token* condition, ProgramMemory pm, const Settings* settings);
 
 /**
  * Is condition always true when variable has given value?
  * \param condition   top ast token in condition
  * \param pm   program memory
  */
-bool conditionIsTrue(const Token* condition, ProgramMemory pm, const Settings* settings = nullptr);
+bool conditionIsTrue(const Token* condition, ProgramMemory pm, const Settings* settings);
 
 /**
  * Get program memory by looking backwards from given token.
  */
 ProgramMemory getProgramMemory(const Token* tok, const Token* expr, const ValueFlow::Value& value, const Settings* settings);
-
-ProgramMemory getProgramMemory(const Token *tok, const ProgramMemory::Map& vars);
 
 ValueFlow::Value evaluateLibraryFunction(const std::unordered_map<nonneg int, ValueFlow::Value>& args,
                                          const std::string& returnValue,

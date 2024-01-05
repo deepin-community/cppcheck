@@ -26,6 +26,8 @@
 #include "tokenize.h"
 
 #include <cstddef>
+#include <iterator>
+#include <list>
 #include <vector>
 
 //---------------------------------------------------------------------------
@@ -41,15 +43,17 @@ namespace {
 //---------------------------------------------------------------------------
 
 // CWE ids used:
-static const struct CWE CWE664(664U);   // Improper Control of a Resource Through its Lifetime
-static const struct CWE CWE688(688U);   // Function Call With Incorrect Variable or Reference as Argument
-static const struct CWE CWE758(758U);   // Reliance on Undefined, Unspecified, or Implementation-Defined Behavior
+static const CWE CWE664(664U);   // Improper Control of a Resource Through its Lifetime
+static const CWE CWE688(688U);   // Function Call With Incorrect Variable or Reference as Argument
+static const CWE CWE758(758U);   // Reliance on Undefined, Unspecified, or Implementation-Defined Behavior
 
 void CheckVaarg::va_start_argument()
 {
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
     const std::size_t functions = symbolDatabase->functionScopes.size();
     const bool printWarnings = mSettings->severity.isEnabled(Severity::warning);
+
+    logChecker("CheckVaarg::va_start_argument");
 
     for (std::size_t i = 0; i < functions; ++i) {
         const Scope* scope = symbolDatabase->functionScopes[i];
@@ -67,7 +71,9 @@ void CheckVaarg::va_start_argument()
                 if (var && var->isReference())
                     referenceAs_va_start_error(param2, var->name());
                 if (var && var->index() + 2 < function->argCount() && printWarnings) {
-                    wrongParameterTo_va_start_error(tok, var->name(), function->argumentList[function->argumentList.size()-2].name());
+                    auto it = function->argumentList.end();
+                    std::advance(it, -2);
+                    wrongParameterTo_va_start_error(tok, var->name(), it->name()); // cppcheck-suppress derefInvalidIterator // FP due to isVariableChangedByFunctionCall()
                 }
                 tok = tok->linkAt(1);
             }
@@ -96,6 +102,9 @@ void CheckVaarg::va_list_usage()
 {
     if (mSettings->clang)
         return;
+
+    logChecker("CheckVaarg::va_list_usage"); // notclang
+
     const SymbolDatabase* const symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Variable* var : symbolDatabase->variableList()) {
         if (!var || var->isPointer() || var->isReference() || var->isArray() || !var->scope() || var->typeStartToken()->str() != "va_list")

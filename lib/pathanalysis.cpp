@@ -24,10 +24,8 @@
 #include "vfvalue.h"
 
 #include <algorithm>
-#include <memory>
 #include <string>
 #include <tuple>
-#include <type_traits>
 
 const Scope* PathAnalysis::findOuterScope(const Scope * scope)
 {
@@ -69,7 +67,7 @@ std::pair<bool, bool> PathAnalysis::checkCond(const Token * tok, bool& known)
     return std::make_pair(true, true);
 }
 
-PathAnalysis::Progress PathAnalysis::forwardRecursive(const Token* tok, Info info, const std::function<PathAnalysis::Progress(const Info&)>& f) const
+PathAnalysis::Progress PathAnalysis::forwardRecursive(const Token* tok, Info info, const std::function<PathAnalysis::Progress(const Info&)>& f)
 {
     if (!tok)
         return Progress::Continue;
@@ -88,11 +86,12 @@ PathAnalysis::Progress PathAnalysis::forwardRange(const Token* startToken, const
     for (const Token *tok = startToken; precedes(tok, endToken); tok = tok->next()) {
         if (Token::Match(tok, "asm|goto|break|continue"))
             return Progress::Break;
-        else if (Token::Match(tok, "return|throw")) {
+        if (Token::Match(tok, "return|throw")) {
             forwardRecursive(tok, info, f);
             return Progress::Break;
             // Evaluate RHS of assignment before LHS
-        } else if (const Token* assignTok = assignExpr(tok)) {
+        }
+        if (const Token* assignTok = assignExpr(tok)) {
             if (forwardRecursive(assignTok->astOperand2(), info, f) == Progress::Break)
                 return Progress::Break;
             if (forwardRecursive(assignTok->astOperand1(), info, f) == Progress::Break)

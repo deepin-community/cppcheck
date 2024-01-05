@@ -37,7 +37,7 @@ class Library;
  */
 class FwdAnalysis {
 public:
-    FwdAnalysis(bool cpp, const Library &library) : mCpp(cpp), mLibrary(library), mWhat(What::Reassign), mValueFlowKnown(true) {}
+    FwdAnalysis(bool cpp, const Library &library) : mCpp(cpp), mLibrary(library) {}
 
     bool hasOperand(const Token *tok, const Token *lhs) const;
 
@@ -60,8 +60,8 @@ public:
     bool unusedValue(const Token *expr, const Token *startToken, const Token *endToken);
 
     struct KnownAndToken {
-        bool known;
-        const Token *token;
+        bool known{};
+        const Token* token{};
     };
 
     /** Is there some possible alias for given expression */
@@ -74,22 +74,22 @@ private:
     /** Result of forward analysis */
     struct Result {
         enum class Type { NONE, READ, WRITE, BREAK, RETURN, BAILOUT } type;
-        explicit Result(Type type) : type(type), token(nullptr) {}
+        explicit Result(Type type) : type(type) {}
         Result(Type type, const Token *token) : type(type), token(token) {}
-        const Token *token;
+        const Token* token{};
     };
 
-    struct Result check(const Token *expr, const Token *startToken, const Token *endToken);
-    struct Result checkRecursive(const Token *expr, const Token *startToken, const Token *endToken, const std::set<nonneg int> &exprVarIds, bool local, bool inInnerClass, int depth=0);
+    Result check(const Token *expr, const Token *startToken, const Token *endToken);
+    Result checkRecursive(const Token *expr, const Token *startToken, const Token *endToken, const std::set<nonneg int> &exprVarIds, bool local, bool inInnerClass, int depth=0);
 
     // Is expression a l-value global data?
     bool isGlobalData(const Token *expr) const;
 
     const bool mCpp;
     const Library &mLibrary;
-    enum class What { Reassign, UnusedValue, ValueFlow } mWhat;
+    enum class What { Reassign, UnusedValue, ValueFlow } mWhat = What::Reassign;
     std::vector<KnownAndToken> mValueFlow;
-    bool mValueFlowKnown;
+    bool mValueFlowKnown = true;
 };
 
 #endif // fwdanalysisH

@@ -2,7 +2,7 @@
 // Test library configuration for sqlite3.cfg
 //
 // Usage:
-// $ cppcheck --check-library --enable=style --library=sqlite3 --error-exitcode=1 --suppress=missingIncludeSystem --inline-suppr test/cfg/sqlite3.c
+// $ cppcheck --check-library --library=sqlite3 --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr test/cfg/sqlite3.c
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
@@ -43,10 +43,10 @@ void resourceLeak_sqlite3_open()
     sqlite3 * db;
 
     sqlite3_open("/db", &db);
-    // TODO: cppcheck-suppress resourceLeak
+    // cppcheck-suppress resourceLeak
 }
 
-void ignoredReturnValue(char * buf)
+void ignoredReturnValue(const char * buf)
 {
     // cppcheck-suppress leakReturnValNotUsed
     sqlite3_malloc(10);

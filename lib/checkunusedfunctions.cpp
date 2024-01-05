@@ -29,18 +29,19 @@
 #include "token.h"
 #include "tokenize.h"
 #include "tokenlist.h"
+#include "utils.h"
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <cstring>
 #include <fstream> // IWYU pragma: keep
-#include <memory>
+#include <map>
 #include <sstream> // IWYU pragma: keep
+#include <tuple>
 #include <utility>
 #include <vector>
 
-#include <tinyxml2.h>
+#include "xml.h"
 
 namespace CTU {
     class FileInfo;
@@ -48,12 +49,12 @@ namespace CTU {
 
 //---------------------------------------------------------------------------
 
-
-
 // Register this check class
-CheckUnusedFunctions CheckUnusedFunctions::instance;
+namespace {
+    CheckUnusedFunctions instance;
+}
 
-static const struct CWE CWE561(561U);   // Dead Code
+static const CWE CWE561(561U);   // Dead Code
 
 static std::string stripTemplateParameters(const std::string& funcName) {
     std::string name = funcName;
@@ -67,39 +68,50 @@ static std::string stripTemplateParameters(const std::string& funcName) {
 // FUNCTION USAGE - Check for unused functions etc
 //---------------------------------------------------------------------------
 
+void CheckUnusedFunctions::clear()
+{
+    instance.mFunctions.clear();
+    instance.mFunctionCalls.clear();
+}
+
 void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char FileName[], const Settings *settings)
 {
     const bool doMarkup = settings->library.markupFile(FileName);
-    const SymbolDatabase* symbolDatabase = tokenizer.getSymbolDatabase();
 
     // Function declarations..
-    for (const Scope* scope : symbolDatabase->functionScopes) {
-        const Function* func = scope->function;
-        if (!func || !func->token || scope->bodyStart->fileIndex() != 0)
-            continue;
+    if (!doMarkup) {
+        const SymbolDatabase* symbolDatabase = tokenizer.getSymbolDatabase();
+        for (const Scope* scope : symbolDatabase->functionScopes) {
+            const Function* func = scope->function;
+            if (!func || !func->token)
+                continue;
 
-        // Don't warn about functions that are marked by __attribute__((constructor)) or __attribute__((destructor))
-        if (func->isAttributeConstructor() || func->isAttributeDestructor() || func->type != Function::eFunction || func->isOperator())
-            continue;
+            // Don't warn about functions that are marked by __attribute__((constructor)) or __attribute__((destructor))
+            if (func->isAttributeConstructor() || func->isAttributeDestructor() || func->type != Function::eFunction || func->isOperator())
+                continue;
 
-        if (func->isExtern())
-            continue;
+            if (func->isExtern())
+                continue;
 
-        mFunctionDecl.emplace_back(func);
+            mFunctionDecl.emplace_back(func);
 
-        FunctionUsage &usage = mFunctions[stripTemplateParameters(func->name())];
+            FunctionUsage &usage = mFunctions[stripTemplateParameters(func->name())];
 
-        if (!usage.lineNumber)
-            usage.lineNumber = func->token->linenr();
+            if (!usage.lineNumber)
+                usage.lineNumber = func->token->linenr();
 
-        // No filename set yet..
-        if (usage.filename.empty()) {
-            usage.filename = tokenizer.list.getSourceFilePath();
-        }
-        // Multiple files => filename = "+"
-        else if (usage.filename != tokenizer.list.getSourceFilePath()) {
-            //func.filename = "+";
-            usage.usedOtherFile |= usage.usedSameFile;
+            usage.fileIndex = func->token->fileIndex();
+            const std::string& fileName = tokenizer.list.file(func->token);
+
+            // No filename set yet..
+            if (usage.filename.empty()) {
+                usage.filename = fileName;
+            }
+            // Multiple files => filename = "+"
+            else if (usage.filename != fileName) {
+                //func.filename = "+";
+                usage.usedOtherFile |= usage.usedSameFile;
+            }
         }
     }
 
@@ -133,7 +145,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
                         mFunctions[markupVarToken->str()].usedOtherFile = true;
                     else if (markupVarToken->next()->str() == "(") {
                         FunctionUsage &func = mFunctions[markupVarToken->str()];
-                        func.filename = tokenizer.list.getSourceFilePath();
+                        func.filename = tokenizer.list.getFiles()[markupVarToken->fileIndex()];
                         if (func.filename.empty() || func.filename == "+")
                             func.usedOtherFile = true;
                         else
@@ -209,7 +221,9 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
 
         const Token *funcname = nullptr;
 
-        if ((lambdaEndToken || tok->scope()->isExecutable()) && Token::Match(tok, "%name% (")) {
+        if (doMarkup)
+            funcname = Token::Match(tok, "%name% (") ? tok : nullptr;
+        else if ((lambdaEndToken || tok->scope()->isExecutable()) && Token::Match(tok, "%name% (")) {
             funcname = tok;
         } else if ((lambdaEndToken || tok->scope()->isExecutable()) && Token::Match(tok, "%name% <") && Token::simpleMatch(tok->linkAt(1), "> (")) {
             funcname = tok;
@@ -217,7 +231,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
             funcname = tok->next();
             while (Token::Match(funcname, "%name% :: %name%"))
                 funcname = funcname->tokAt(2);
-        } else if (tok->scope()->type != Scope::ScopeType::eEnum && Token::Match(tok, "[;{}.,()[=+-/|!?:]")) {
+        } else if (tok->scope()->type != Scope::ScopeType::eEnum && (Token::Match(tok, "[;{}.,()[=+-/|!?:]") || Token::Match(tok, "return|throw"))) {
             funcname = tok->next();
             if (funcname && funcname->str() == "&")
                 funcname = funcname->next();
@@ -234,7 +248,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
             continue;
 
         // funcname ( => Assert that the end parentheses isn't followed by {
-        if (Token::Match(funcname, "%name% (|<")) {
+        if (Token::Match(funcname, "%name% (|<") && funcname->linkAt(1)) {
             const Token *ftok = funcname->next();
             if (ftok->str() == "<")
                 ftok = ftok->link();
@@ -245,7 +259,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
         if (funcname) {
             const auto baseName = stripTemplateParameters(funcname->str());
             FunctionUsage &func = mFunctions[baseName];
-            const std::string& called_from_file = tokenizer.list.getSourceFilePath();
+            const std::string& called_from_file = tokenizer.list.getFiles()[funcname->fileIndex()];
 
             if (func.filename.empty() || func.filename == "+" || func.filename != called_from_file)
                 func.usedOtherFile = true;
@@ -307,7 +321,7 @@ static bool isOperatorFunction(const std::string & funcName)
 
 bool CheckUnusedFunctions::check(ErrorLogger * const errorLogger, const Settings& settings) const
 {
-    using ErrorParams = std::tuple<std::string, unsigned int, std::string>;
+    using ErrorParams = std::tuple<std::string, unsigned int, unsigned int, std::string>;
     std::vector<ErrorParams> errors; // ensure well-defined order
 
     for (std::unordered_map<std::string, FunctionUsage>::const_iterator it = mFunctions.cbegin(); it != mFunctions.cend(); ++it) {
@@ -322,7 +336,7 @@ bool CheckUnusedFunctions::check(ErrorLogger * const errorLogger, const Settings
             std::string filename;
             if (func.filename != "+")
                 filename = func.filename;
-            errors.emplace_back(filename, func.lineNumber, it->first);
+            errors.emplace_back(filename, func.fileIndex, func.lineNumber, it->first);
         } else if (!func.usedOtherFile) {
             /** @todo add error message "function is only used in <file> it can be static" */
             /*
@@ -335,31 +349,32 @@ bool CheckUnusedFunctions::check(ErrorLogger * const errorLogger, const Settings
     }
     std::sort(errors.begin(), errors.end());
     for (const auto& e : errors)
-        unusedFunctionError(errorLogger, std::get<0>(e), std::get<1>(e), std::get<2>(e));
+        unusedFunctionError(errorLogger, std::get<0>(e), std::get<1>(e), std::get<2>(e), std::get<3>(e));
     return !errors.empty();
 }
 
 void CheckUnusedFunctions::unusedFunctionError(ErrorLogger * const errorLogger,
-                                               const std::string &filename, unsigned int lineNumber,
+                                               const std::string &filename, unsigned int fileIndex, unsigned int lineNumber,
                                                const std::string &funcname)
 {
     std::list<ErrorMessage::FileLocation> locationList;
     if (!filename.empty()) {
         locationList.emplace_back(filename, lineNumber);
+        locationList.back().fileIndex = fileIndex;
     }
 
     const ErrorMessage errmsg(locationList, emptyString, Severity::style, "$symbol:" + funcname + "\nThe function '$symbol' is never used.", "unusedFunction", CWE561, Certainty::normal);
     if (errorLogger)
         errorLogger->reportErr(errmsg);
     else
-        reportError(errmsg);
+        Check::writeToErrorList(errmsg);
 }
 
 Check::FileInfo *CheckUnusedFunctions::getFileInfo(const Tokenizer *tokenizer, const Settings *settings) const
 {
     if (!settings->checks.isEnabled(Checks::unusedFunction))
         return nullptr;
-    if (settings->jobs == 1 && settings->buildDir.empty())
+    if (settings->useSingleJob() && settings->buildDir.empty())
         instance.parseTokens(*tokenizer, tokenizer->list.getFiles().front().c_str(), settings);
     return nullptr;
 }
@@ -368,6 +383,9 @@ bool CheckUnusedFunctions::analyseWholeProgram(const CTU::FileInfo *ctu, const s
 {
     (void)ctu;
     (void)fileInfo;
+    CheckUnusedFunctions dummy(nullptr, &settings, &errorLogger);
+    dummy.
+    logChecker("CheckUnusedFunctions::analyseWholeProgram"); // unusedFunctions
     return check(&errorLogger, settings);
 }
 
@@ -438,24 +456,27 @@ void CheckUnusedFunctions::analyseWholeProgram(const Settings &settings, ErrorLo
                 if (std::strcmp(e2->Name(),"functioncall") == 0) {
                     calls.insert(functionName);
                     continue;
-                } else if (std::strcmp(e2->Name(),"functiondecl") == 0) {
+                }
+                if (std::strcmp(e2->Name(),"functiondecl") == 0) {
                     const char* lineNumber = e2->Attribute("lineNumber");
-                    if (lineNumber)
-                        decls[functionName] = Location(sourcefile, std::atoi(lineNumber));
+                    if (lineNumber) {
+                        // cppcheck-suppress templateInstantiation - TODO: fix this - see #11631
+                        decls[functionName] = Location(sourcefile, strToInt<int>(lineNumber));
+                    }
                 }
             }
         }
     }
 
     for (std::map<std::string, Location>::const_iterator decl = decls.cbegin(); decl != decls.cend(); ++decl) {
-        const std::string &functionName = decl->first;
+        const std::string &functionName = stripTemplateParameters(decl->first);
 
         if (settings.library.isentrypoint(functionName))
             continue;
 
         if (calls.find(functionName) == calls.end() && !isOperatorFunction(functionName)) {
             const Location &loc = decl->second;
-            unusedFunctionError(errorLogger, loc.fileName, loc.lineNumber, functionName);
+            unusedFunctionError(errorLogger, loc.fileName, /*fileIndex*/ 0, loc.lineNumber, functionName);
         }
     }
 }

@@ -2,20 +2,53 @@
 // Test library configuration for windows.cfg
 //
 // Usage:
-// $ cppcheck --check-library --library=windows --enable=style --error-exitcode=1 --suppress=missingIncludeSystem --inline-suppr test/cfg/windows.cpp
+// $ cppcheck --check-library --library=windows --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr test/cfg/windows.cpp
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
 
-#include <windows.h>
-#include <stdio.h>
+#include <Windows.h>
+#include <WinCon.h>
+#include <cstdio>
 #include <direct.h>
-#include <stdlib.h>
-#include <time.h>
+#include <cstdlib>
+#include <ctime>
 #include <memory.h>
 #include <mbstring.h>
 #include <wchar.h>
 #include <atlstr.h>
+#include <string>
+
+void resourceLeak_OpenThread(const DWORD dwDesiredAccess, const BOOL bInheritHandle, const DWORD dwThreadId)
+{
+    HANDLE proc = OpenThread(dwDesiredAccess, bInheritHandle, dwThreadId);
+    if (proc != INVALID_HANDLE_VALUE) {}
+    // cppcheck-suppress resourceLeak
+}
+
+void resourceLeak_OpenProcess(const DWORD dwDesiredAccess, const BOOL bInheritHandle, const DWORD dwProcessId)
+{
+    HANDLE proc = OpenProcess(dwDesiredAccess, bInheritHandle, dwProcessId);
+    if (proc != INVALID_HANDLE_VALUE) {}
+    // cppcheck-suppress resourceLeak
+}
+
+/// https://learn.microsoft.com/en-us/windows/console/flushconsoleinputbuffer
+BOOL unreachableCode_FlushConsoleInputBuffer(int &val)
+{
+    const BOOL retVal = FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+    // still reachable after call FlushConsoleInputBuffer()
+    val = 42;
+    return retVal;
+}
+
+/// https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-getmodulefilenamew
+std::string constVariable_GetModuleFileName(void) {
+    char path[42];
+    if (GetModuleFileNameA(NULL, path, sizeof(path))==0)
+        return std::string();
+    return std::string{path};
+}
 
 int stringCompare_mbscmp(const unsigned char *string1, const unsigned char *string2)
 {
@@ -82,7 +115,7 @@ unsigned char * overlappingWriteFunction__mbscat(unsigned char *src, unsigned ch
     return _mbscat(src, src);
 }
 
-unsigned char * overlappingWriteFunction__memccpy(unsigned char *src, unsigned char *dest, int c, size_t count)
+unsigned char * overlappingWriteFunction__memccpy(const unsigned char *src, unsigned char *dest, int c, size_t count)
 {
     // No warning shall be shown:
     (void)_memccpy(dest, src, c, count);
@@ -117,22 +150,22 @@ SYSTEM_INFO uninitvar_GetSystemInfo(char * envstr)
     return SystemInfo;
 }
 
-void uninitvar__putenv(char * envstr)
+void uninitvar__putenv(const char * envstr)
 {
     // No warning is expected
     (void)_putenv(envstr);
 
-    char * p;
+    const char * p;
     // cppcheck-suppress uninitvar
     (void)_putenv(p);
 }
 
-void nullPointer__putenv(char * envstr)
+void nullPointer__putenv(const char * envstr)
 {
     // No warning is expected
     (void)_putenv(envstr);
 
-    char * p=NULL;
+    const char * p=NULL;
     // cppcheck-suppress nullPointer
     (void)_putenv(p);
 }
@@ -258,6 +291,7 @@ void validCode()
         CloseHandle(event);
     }
 
+    // cppcheck-suppress unusedAllocatedMemory
     void *pMem1 = _malloca(1);
     _freea(pMem1);
     // Memory from _alloca must not be freed
@@ -343,7 +377,7 @@ void validCode()
     SecureZeroMemory(byteBuf, sizeof(byteBuf));
     RtlFillMemory(byteBuf, sizeof(byteBuf), 0xff);
 
-    // cppcheck-suppress LocalAllocCalled
+    // cppcheck-suppress [LocalAllocCalled, unusedAllocatedMemory]
     HLOCAL pLocalAlloc = LocalAlloc(1, 2);
     LocalFree(pLocalAlloc);
 
@@ -357,6 +391,7 @@ void validCode()
     __noop(1, "test", NULL);
     __nop();
 
+    // cppcheck-suppress unusedAllocatedMemory
     void * pAlloc1 = _aligned_malloc(100, 2);
     _aligned_free(pAlloc1);
 
@@ -437,6 +472,7 @@ void mismatchAllocDealloc()
     // cppcheck-suppress mismatchAllocDealloc
     free(pChar);
 
+    // cppcheck-suppress unusedAllocatedMemory
     pChar = _malloca(32);
     // cppcheck-suppress mismatchAllocDealloc
     _aligned_free(pChar);
@@ -522,8 +558,7 @@ void nullPointer()
 
 void memleak_malloca()
 {
-    // cppcheck-suppress unusedAllocatedMemory
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [unusedAllocatedMemory, unreadVariable, constVariablePointer]
     void *pMem = _malloca(10);
     // cppcheck-suppress memleak
 }
@@ -555,6 +590,20 @@ void memleak_LocalAlloc()
     (void)LocalFlags(pszBuf);
     LocalLock(pszBuf);
     LocalUnlock(pszBuf);
+    // cppcheck-suppress memleak
+}
+
+void memleak_dupenv_s() // #10646
+{
+    char* pValue;
+    size_t len;
+    errno_t err = _dupenv_s(&pValue, &len, "pathext");
+    if (err) return -1;
+    printf("pathext = %s\n", pValue);
+    free(pValue);
+    err = _dupenv_s(&pValue, &len, "nonexistentvariable");
+    if (err) return -1;
+    printf("nonexistentvariable = %s\n", pValue);
     // cppcheck-suppress memleak
 }
 
@@ -751,6 +800,7 @@ void invalidFunctionArg()
 
 void uninitvar()
 {
+    // cppcheck-suppress unassignedVariable
     HANDLE hSemaphore;
     // cppcheck-suppress uninitvar
     CloseHandle(hSemaphore);
@@ -760,17 +810,20 @@ void uninitvar()
     // cppcheck-suppress uninitvar
     lstrcat(buf, "test");
     buf[0] = '\0';
+    // cppcheck-suppress constVariable
     char buf2[2];
     // cppcheck-suppress lstrcatCalled
     // cppcheck-suppress uninitvar
     lstrcat(buf, buf2);
 
+    // cppcheck-suppress unassignedVariable
     HANDLE hMutex1, hMutex2;
     // cppcheck-suppress uninitvar
     ReleaseMutex(hMutex1);
     // cppcheck-suppress uninitvar
     CloseHandle(hMutex2);
 
+    // cppcheck-suppress unassignedVariable
     HANDLE hEvent1, hEvent2, hEvent3, hEvent4;
     // cppcheck-suppress uninitvar
     PulseEvent(hEvent1);
@@ -987,7 +1040,7 @@ HANDLE test_CreateThread(LPSECURITY_ATTRIBUTES lpThreadAttributes,
 unsigned char * uninitvar_mbscat(unsigned char *strDestination, const unsigned char *strSource)
 {
     unsigned char *uninit_deststr;
-    unsigned char *uninit_srcstr1, *uninit_srcstr2;
+    const unsigned char *uninit_srcstr1, *uninit_srcstr2;
     // cppcheck-suppress uninitvar
     (void)_mbscat(uninit_deststr,uninit_srcstr1);
     // cppcheck-suppress uninitvar
@@ -1014,7 +1067,7 @@ error_t uninitvar_mbscat_s(unsigned char *strDestination, size_t numberOfElement
 {
     unsigned char *uninit_strDestination;
     size_t uninit_numberOfElements;
-    unsigned char *uninit_strSource;
+    const unsigned char *uninit_strSource;
 
     // cppcheck-suppress uninitvar
     (void)_mbscat_s(uninit_strDestination, numberOfElements, strSource);
@@ -1072,7 +1125,7 @@ error_t nullPointer__strncpy_s_l(char *strDest, size_t numberOfElements, const c
     return _strncpy_s_l(strDest, numberOfElements, strSource, count, locale);
 }
 
-void GetShortPathName_validCode(TCHAR* lpszPath)
+void GetShortPathName_validCode(const TCHAR* lpszPath)
 {
     long length = GetShortPathName(lpszPath, NULL, 0);
     if (length == 0) {
@@ -1107,4 +1160,8 @@ void invalidPrintfArgType_StructMember(double d) { // #9672
     my_struct_t my_struct;
     // cppcheck-suppress invalidPrintfArgType_sint
     my_struct.st.Format("%d", d);
+}
+
+BOOL MyEnableWindow(HWND hWnd, BOOL bEnable) {
+    return EnableWindow(hWnd, bEnable);
 }

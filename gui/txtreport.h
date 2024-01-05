@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,10 +22,10 @@
 #include "report.h"
 
 #include <QString>
+#include <QObject>
 #include <QTextStream>
 
 class ErrorItem;
-class QObject;
 
 /// @addtogroup GUI
 /// @{
@@ -40,7 +40,6 @@ class TxtReport : public Report {
 
 public:
     explicit TxtReport(const QString &filename);
-    ~TxtReport() override;
 
     /**
      * @brief Create the report (file).

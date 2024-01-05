@@ -26,9 +26,12 @@ from urllib.parse import urlparse
 # Version scheme (MAJOR.MINOR.PATCH) should orientate on "Semantic Versioning" https://semver.org/
 # Every change in this script should result in increasing the version number accordingly (exceptions may be cosmetic
 # changes)
-SERVER_VERSION = "1.3.36"
+SERVER_VERSION = "1.3.46"
 
-OLD_VERSION = '2.9'
+OLD_VERSION = '2.12.0'
+
+HEAD_MARKER = 'head results:'
+INFO_MARKER = 'info messages:'
 
 
 # Set up logging
@@ -49,7 +52,8 @@ logger.addHandler(handler_file)
 
 
 def print_ts(msg) -> None:
-    print('[{}] {}'.format(strDateTime(), msg))
+    dt = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+    print('[{}] {}'.format(dt, msg))
 
 
 # Set up an exception hook for all uncaught exceptions so they can be logged
@@ -65,7 +69,7 @@ sys.excepthook = handle_uncaught_exception
 
 
 def strDateTime() -> str:
-    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+    return datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
 
 def dateTimeFromStr(datestr: str) -> datetime.datetime:
@@ -81,6 +85,7 @@ def overviewReport() -> str:
     html += '<a href="stale.html">Stale report</a><br>\n'
     html += '<a href="diff.html">Diff report</a><br>\n'
     html += '<a href="head.html">HEAD report</a><br>\n'
+    html += '<a href="headinfo.html">HEAD (information) report</a><br>\n'
     html += '<a href="latest.html">Latest results</a><br>\n'
     html += '<a href="time_lt.html">Time report (improved)</a><br>\n'
     html += '<a href="time_gt.html">Time report (regressed)</a> - <a href="time_gt.html?pkgs=1">packages.txt</a><br>\n'
@@ -101,14 +106,19 @@ def overviewReport() -> str:
     html += '<a href="head-simplifyUsingUnmatchedBodyEnd">simplifyUsingUnmatchedBodyEnd</a><br>\n'
     html += '<a href="head-simplifyUsing">simplifyUsing</a><br>\n'
     html += '<a href="head-valueFlowMaxIterations">valueFlowMaxIterations</a><br>\n'
+    html += '<a href="head-templateInstantiation">templateInstantiation</a><br>\n'
     #html += '<a href="head-autoNoType">autoNoType</a><br>\n'
     #html += '<a href="head-valueFlowBailout">valueFlowBailout</a><br>\n'
     #html += '<a href="head-bailoutUninitVar">bailoutUninitVar</a><br>\n'
     #html += '<a href="head-symbolDatabaseWarning">symbolDatabaseWarning</a><br>\n'
-    #html += '<a href="head-valueFlowBailoutIncompleteVar">valueFlowBailoutIncompleteVar</a><br>\n'
+    html += '<br>\n'
+    html += 'Custom reports:<br>\n'
+    html += '<a href="value_flow_bailout_incomplete_var.html">valueFlowBailoutIncompleteVar report</a><br>\n'
+    html += '<a href="unknown_macro.html">unknownMacro report</a><br>\n'
     html += '<br>\n'
     html += 'Important errors:<br>\n'
     html += '<a href="head-cppcheckError">cppcheckError</a><br>\n'
+    html += '<a href="head-internalError">internalError</a><br>\n'
     html += '<a href="head-internalAstError">internalAstError</a><br>\n'
     html += '<a href="head-syntaxError">syntaxError</a><br>\n'
     html += '<a href="head-DacaWrongData">DacaWrongData</a><br>\n'
@@ -535,7 +545,7 @@ def diffMessageIdTodayReport(resultPath: str, messageId: str) -> str:
     return text
 
 
-def headReportFromDict(out: dict, today: str) -> str:
+def summaryReportFromDict(out: dict, prefix: str, today: str) -> str:
     html = '<pre>\n'
     html += '<b>MessageID                                  Count</b>\n'
     sumTotal = 0
@@ -548,7 +558,7 @@ def headReportFromDict(out: dict, today: str) -> str:
             while len(line) < 48 - len(c):
                 line += ' '
             line += c + ' '
-        line = '<a href="head' + today + '-' + messageId + '">' + messageId + '</a>' + line[line.find(' '):]
+        line = '<a href="' + prefix + today + '-' + messageId + '">' + messageId + '</a>' + line[line.find(' '):]
         html += line + '\n'
 
     # Sum
@@ -563,7 +573,7 @@ def headReportFromDict(out: dict, today: str) -> str:
     return html
 
 
-def headReport(resultsPath: str) -> str:
+def summaryReport(resultsPath: str, name: str, prefix: str, marker: str) -> str:
     out = {}
     outToday = {}
     today = strDateTime()[:10]
@@ -573,7 +583,7 @@ def headReport(resultsPath: str) -> str:
             continue
         uploadedToday = False
         firstLine = True
-        headResults = False
+        inResults = False
         for line in open(filename, 'rt'):
             if firstLine:
                 if line.startswith(today):
@@ -588,14 +598,13 @@ def headReport(resultsPath: str) -> str:
                 else:
                     # Current package, parse on
                     continue
-            if line.startswith('head results:'):
-                headResults = True
+            if line.startswith(marker):
+                inResults = True
+                continue
+            if not inResults:
                 continue
             if line.startswith('diff:'):
-                if headResults:
-                    break
-            if not headResults:
-                continue
+                break
             if not line.endswith(']'):
                 continue
             if ': note: ' in line:
@@ -618,17 +627,25 @@ def headReport(resultsPath: str) -> str:
                 outToday[messageId] += 1
 
     html = '<!DOCTYPE html>\n'
-    html += '<html><head><title>HEAD report</title></head><body>\n'
+    html += '<html><head><title>{} report</title></head><body>\n'.format(name)
     html += '<h1>HEAD report</h1>\n'
     html += '<h2>Uploaded today</h2>'
-    html += headReportFromDict(outToday, 'today')
+    html += summaryReportFromDict(outToday, prefix, 'today')
     html += '<h2>All</h2>'
-    html += headReportFromDict(out, '')
+    html += summaryReportFromDict(out, prefix, '')
 
     return html
 
 
-def headMessageIdReport(resultPath: str, messageId: str, query_params: dict) -> str:
+def headReport(resultsPath: str) -> str:
+    return summaryReport(resultsPath, 'HEAD', 'head', HEAD_MARKER)
+
+
+def infoReport(resultsPath: str) -> str:
+    return summaryReport(resultsPath, 'HEAD (information)', 'headinfo', INFO_MARKER)
+
+
+def messageIdReport(resultPath: str, marker: str, messageId: str, query_params: dict) -> str:
     pkgs = '' if query_params.get('pkgs') == '1' else None
     text = messageId + '\n'
     e = '[' + messageId + ']\n'
@@ -636,17 +653,25 @@ def headMessageIdReport(resultPath: str, messageId: str, query_params: dict) -> 
         if not os.path.isfile(filename) or filename.endswith('.diff'):
             continue
         url = None
-        headResults = False
+        inResults = False
         for line in open(filename, 'rt'):
+            if line.startswith('cppcheck: '):
+                if OLD_VERSION not in line:
+                    # Package results seem to be too old, skip
+                    break
+                else:
+                    # Current package, parse on
+                    continue
             if line.startswith('ftp://'):
                 url = line
-            elif line.startswith('head results:'):
-                headResults = True
-            elif not headResults:
                 continue
-            elif headResults and line.startswith('diff:'):
+            if not inResults:
+                if line.startswith(marker):
+                    inResults = True
+                continue
+            if line.startswith('diff:'):
                 break
-            elif line.endswith(e):
+            if line.endswith(e):
                 if url:
                     text += url
                     if pkgs is not None:
@@ -658,7 +683,15 @@ def headMessageIdReport(resultPath: str, messageId: str, query_params: dict) -> 
     return text
 
 
-def headMessageIdTodayReport(resultPath: str, messageId: str) -> str:
+def headMessageIdReport(resultPath: str, messageId: str, query_params: dict) -> str:
+    return messageIdReport(resultPath, HEAD_MARKER, messageId, query_params)
+
+
+def infoMessageIdReport(resultPath: str, messageId: str, query_params: dict) -> str:
+    return messageIdReport(resultPath, INFO_MARKER, messageId, query_params)
+
+
+def messageIdTodayReport(resultPath: str, messageId: str, marker: str) -> str:
     text = messageId + '\n'
     e = '[' + messageId + ']\n'
     today = strDateTime()[:10]
@@ -666,7 +699,7 @@ def headMessageIdTodayReport(resultPath: str, messageId: str) -> str:
         if not os.path.isfile(filename) or filename.endswith('.diff'):
             continue
         url = None
-        headResults = False
+        inResults = False
         firstLine = True
         for line in open(filename, 'rt'):
             if firstLine:
@@ -675,13 +708,14 @@ def headMessageIdTodayReport(resultPath: str, messageId: str) -> str:
                     break
             if line.startswith('ftp://'):
                 url = line
-            elif line.startswith('head results:'):
-                headResults = True
-            elif not headResults:
                 continue
-            elif headResults and line.startswith('diff:'):
+            if not inResults:
+                if line.startswith(marker):
+                    inResults = True
+                continue
+            if line.startswith('diff:'):
                 break
-            elif line.endswith(e):
+            if line.endswith(e):
                 if url:
                     text += url
                     url = None
@@ -689,7 +723,16 @@ def headMessageIdTodayReport(resultPath: str, messageId: str) -> str:
     return text
 
 
-def timeReport(resultPath: str, show_gt: bool, query_params: dict) -> str:
+def headMessageIdTodayReport(resultPath: str, messageId: str) -> str:
+    return messageIdTodayReport(resultPath, messageId, HEAD_MARKER)
+
+
+def infoMessageIdTodayReport(resultPath: str, messageId: str) -> str:
+    return messageIdTodayReport(resultPath, messageId, INFO_MARKER)
+
+
+# TODO: needs to dinicate that it returns 'tuple[str, str]' but that isn't supported until Python 3.9
+def timeReport(resultPath: str, show_gt: bool, query_params: dict):
     # no need for package report support in "improved" report
     pkgs = '' if show_gt and query_params and query_params.get('pkgs') == '1' else None
     factor = float(query_params.get('factor')) if query_params and 'factor' in query_params else 2.0
@@ -865,17 +908,31 @@ def timeReportSlow(resultPath: str) -> str:
 
 
 def check_library_report(result_path: str, message_id: str) -> str:
-    if message_id not in ('checkLibraryNoReturn', 'checkLibraryFunction', 'checkLibraryUseIgnore', 'checkLibraryCheckType'):
+    if message_id not in ('checkLibraryNoReturn', 'checkLibraryFunction', 'checkLibraryUseIgnore', 'checkLibraryCheckType', 'valueFlowBailoutIncompleteVar', 'unknownMacro'):
         error_message = 'Invalid value ' + message_id + ' for message_id parameter.'
         print_ts(error_message)
         return error_message
 
-    if message_id == 'checkLibraryCheckType':
+    if message_id == 'unknownMacro':
+        metric = 'macros'
+        m_column = 'macro'
+        metric_link = 'unknown_macro'
+        start_marker = HEAD_MARKER
+    elif message_id == 'valueFlowBailoutIncompleteVar':
+        metric = 'variables'
+        m_column = 'Variable'
+        metric_link = 'incomplete_var'
+        start_marker = HEAD_MARKER
+    elif message_id == 'checkLibraryCheckType':
         metric = 'types'
         m_column = 'Type'
+        metric_link = 'check_library'
+        start_marker = INFO_MARKER
     else:
         metric = 'functions'
         m_column = 'Function'
+        metric_link = 'check_library'
+        start_marker = INFO_MARKER
 
     functions_shown_max = 5000
     html = '<!DOCTYPE html>\n'
@@ -892,7 +949,7 @@ def check_library_report(result_path: str, message_id: str) -> str:
     for filename in glob.glob(result_path + '/*'):
         if not os.path.isfile(filename) or filename.endswith('.diff'):
             continue
-        info_messages = False
+        in_results = False
         for line in open(filename, 'rt'):
             if line.startswith('cppcheck: '):
                 if OLD_VERSION not in line:
@@ -901,17 +958,28 @@ def check_library_report(result_path: str, message_id: str) -> str:
                 else:
                     # Current package, parse on
                     continue
-            if line == 'info messages:\n':
-                info_messages = True
-            if not info_messages:
+            if not in_results:
+                if line.startswith(start_marker):
+                    in_results = True
                 continue
+            if line.startswith('diff:'):
+                break
             if line.endswith('[' + message_id + ']\n'):
-                if message_id == 'checkLibraryFunction':
-                    function_name = line[(line.find('for function ') + len('for function ')):line.rfind('[') - 1]
+                if message_id == 'unknownMacro':
+                    marker = 'required. If '
+                    function_name = line[(line.find(marker) + len(marker)):line.rfind('is a macro') - 1]
+                elif message_id == 'valueFlowBailoutIncompleteVar':
+                    marker = 'incomplete variable '
+                    function_name = line[(line.find(marker) + len(marker)):line.rfind('[') - 1]
+                elif message_id == 'checkLibraryFunction':
+                    marker = 'for function '
+                    function_name = line[(line.find(marker) + len(marker)):line.rfind('[') - 1]
                 elif message_id == 'checkLibraryCheckType':
-                    function_name = line[(line.find('configuration for ') + len('configuration for ')):line.rfind('[') - 1]
+                    marker = 'configuration for '
+                    function_name = line[(line.find(marker) + len(marker)):line.rfind('[') - 1]
                 else:
-                    function_name = line[(line.find(': Function ') + len(': Function ')):line.rfind('should have') - 1]
+                    marker = ': Function '
+                    function_name = line[(line.find(marker) + len(marker)):line.rfind('should have') - 1]
                 function_counts[function_name] = function_counts.setdefault(function_name, 0) + 1
 
     function_details_list = []
@@ -919,7 +987,7 @@ def check_library_report(result_path: str, message_id: str) -> str:
         if len(function_details_list) >= functions_shown_max:
             break
         function_details_list.append(str(count).rjust(column_widths[0]) + ' ' +
-                '<a href="check_library-' + urllib.parse.quote_plus(function_name) + '">' + function_name + '</a>\n')
+                '<a href="' + metric_link + '-' + urllib.parse.quote_plus(function_name) + '">' + function_name + '</a>\n')
 
     html += ''.join(function_details_list)
     html += '</pre>\n'
@@ -929,38 +997,62 @@ def check_library_report(result_path: str, message_id: str) -> str:
 
 
 # Lists all checkLibrary* messages regarding the given function name
-def check_library_function_name(result_path: str, function_name: str) -> str:
+def check_library_function_name(result_path: str, function_name: str, query_params: dict, nonfunc_id: str='') -> str:
+    pkgs = '' if query_params.get('pkgs') == '1' else None
     function_name = urllib.parse.unquote_plus(function_name)
-    if function_name.endswith('()'):
-        id = '[checkLibrary'
+    if nonfunc_id:
+        id = '[' + nonfunc_id
+        marker = HEAD_MARKER
     else:
-        id = '[checkLibraryCheckType]'
+        if function_name.endswith('()'):
+            id = '[checkLibrary'
+        else:
+            id = '[checkLibraryCheckType]'
+        marker = INFO_MARKER
     output_lines_list = []
     for filename in glob.glob(result_path + '/*'):
         if not os.path.isfile(filename) or filename.endswith('.diff'):
             continue
-        info_messages = False
-        url = None
+        in_results = False
+        package_url = None
         cppcheck_options = None
         for line in open(filename, 'rt'):
+            if line.startswith('cppcheck: '):
+                if OLD_VERSION not in line:
+                    # Package results seem to be too old, skip
+                    break
+                else:
+                    # Current package, parse on
+                    continue
             if line.startswith('ftp://'):
-                url = line
-            elif line.startswith('cppcheck-options:'):
-                cppcheck_options = line
-            elif line == 'info messages:\n':
-                info_messages = True
-            if not info_messages:
+                package_url = line
                 continue
-            if id in line:
-                if (' ' + function_name + ' ') in line:
-                    if url:
-                        output_lines_list.append(url)
-                        url = None
-                    if cppcheck_options:
-                        output_lines_list.append(cppcheck_options)
-                        cppcheck_options = None
-                    output_lines_list.append(line)
+            if line.startswith('cppcheck-options:'):
+                cppcheck_options = line
+                continue
+            if not in_results:
+                if line.startswith(marker):
+                    in_results = True
+                continue
+            if line.startswith('diff:'):
+                break
+            if id not in line:
+                continue
+            if not (' ' + function_name + ' ') in line:
+                continue
+            if pkgs is not None and package_url is not None:
+                pkgs += '{}\n'.format(package_url.strip())
+                break
+            if package_url:
+                output_lines_list.append(package_url)
+                package_url = None
+            if cppcheck_options:
+                output_lines_list.append(cppcheck_options)
+                cppcheck_options = None
+            output_lines_list.append(line)
 
+    if pkgs is not None:
+        return pkgs
     return ''.join(output_lines_list)
 
 
@@ -989,9 +1081,11 @@ class HttpClientThread(Thread):
         self.connection = connection
         self.cmd = cmd[:cmd.find('\r\n')]
         self.resultPath = resultPath
+        self.infoPath = os.path.join(self.resultPath, 'info_output')
         self.latestResults = latestResults
 
     # TODO: use a proper parser
+    @staticmethod
     def parse_req(cmd):
         req_parts = cmd.split(' ')
         if len(req_parts) != 3 or req_parts[0] != 'GET' or not req_parts[2].startswith('HTTP'):
@@ -1003,7 +1097,7 @@ class HttpClientThread(Thread):
         try:
             cmd = self.cmd
             print_ts(cmd)
-            url, queryParams = HttpClientThread.parse_req(cmd)
+            url, queryParams = self.parse_req(cmd)
             if url is None:
                 print_ts('invalid request: {}'.format(cmd))
                 self.connection.close()
@@ -1037,13 +1131,24 @@ class HttpClientThread(Thread):
             elif url == '/head.html':
                 html = headReport(self.resultPath)
                 httpGetResponse(self.connection, html, 'text/html')
+            elif url == '/headinfo.html':
+                html = infoReport(self.infoPath)
+                httpGetResponse(self.connection, html, 'text/html')
             elif url.startswith('/headtoday-'):
                 messageId = url[len('/headtoday-'):]
                 text = headMessageIdTodayReport(self.resultPath, messageId)
                 httpGetResponse(self.connection, text, 'text/plain')
+            elif url.startswith('/headinfotoday-'):
+                messageId = url[len('/headinfotoday-'):]
+                text = infoMessageIdTodayReport(self.infoPath, messageId)
+                httpGetResponse(self.connection, text, 'text/plain')
             elif url.startswith('/head-'):
                 messageId = url[len('/head-'):]
                 text = headMessageIdReport(self.resultPath, messageId, queryParams)
+                httpGetResponse(self.connection, text, 'text/plain')
+            elif url.startswith('/headinfo-'):
+                messageId = url[len('/headinfo-'):]
+                text = infoMessageIdReport(self.infoPath, messageId, queryParams)
                 httpGetResponse(self.connection, text, 'text/plain')
             elif url == '/time_lt.html':
                 text, mime = timeReport(self.resultPath, False, queryParams)
@@ -1055,20 +1160,34 @@ class HttpClientThread(Thread):
                 text = timeReportSlow(self.resultPath)
                 httpGetResponse(self.connection, text, 'text/html')
             elif url == '/check_library_function_report.html':
-                text = check_library_report(self.resultPath + '/' + 'info_output', message_id='checkLibraryFunction')
+                text = check_library_report(self.infoPath, message_id='checkLibraryFunction')
                 httpGetResponse(self.connection, text, 'text/html')
             elif url == '/check_library_noreturn_report.html':
-                text = check_library_report(self.resultPath + '/' + 'info_output', message_id='checkLibraryNoReturn')
+                text = check_library_report(self.infoPath, message_id='checkLibraryNoReturn')
                 httpGetResponse(self.connection, text, 'text/html')
             elif url == '/check_library_use_ignore_report.html':
-                text = check_library_report(self.resultPath + '/' + 'info_output', message_id='checkLibraryUseIgnore')
+                text = check_library_report(self.infoPath, message_id='checkLibraryUseIgnore')
                 httpGetResponse(self.connection, text, 'text/html')
             elif url == '/check_library_check_type_report.html':
-                text = check_library_report(self.resultPath + '/' + 'info_output', message_id='checkLibraryCheckType')
+                text = check_library_report(self.infoPath, message_id='checkLibraryCheckType')
                 httpGetResponse(self.connection, text, 'text/html')
             elif url.startswith('/check_library-'):
                 function_name = url[len('/check_library-'):]
-                text = check_library_function_name(self.resultPath + '/' + 'info_output', function_name)
+                text = check_library_function_name(self.infoPath, function_name, queryParams)
+                httpGetResponse(self.connection, text, 'text/plain')
+            elif url == '/value_flow_bailout_incomplete_var.html':
+                text = check_library_report(self.resultPath, message_id='valueFlowBailoutIncompleteVar')
+                httpGetResponse(self.connection, text, 'text/html')
+            elif url == '/unknown_macro.html':
+                text = check_library_report(self.resultPath, message_id='unknownMacro')
+                httpGetResponse(self.connection, text, 'text/html')
+            elif url.startswith('/incomplete_var-'):
+                var_name = url[len('/incomplete_var-'):]
+                text = check_library_function_name(self.resultPath, var_name, queryParams, nonfunc_id='valueFlowBailoutIncompleteVar')
+                httpGetResponse(self.connection, text, 'text/plain')
+            elif url.startswith('/unknown_macro-'):
+                var_name = url[len('/unknown_macro-'):]
+                text = check_library_function_name(self.resultPath, var_name, queryParams, nonfunc_id='unknownMacro')
                 httpGetResponse(self.connection, text, 'text/plain')
             else:
                 filename = resultPath + url
@@ -1090,8 +1209,8 @@ class HttpClientThread(Thread):
 
 def read_data(connection, cmd, pos_nl, max_data_size, check_done, cmd_name, timeout=10):
     data = cmd[pos_nl+1:]
+    t = 0.0
     try:
-        t = 0.0
         while (len(data) < max_data_size) and (not check_done or not data.endswith('\nDONE')) and (timeout > 0 and t < timeout):
             bytes_received = connection.recv(1024)
             if bytes_received:
@@ -1113,7 +1232,7 @@ def read_data(connection, cmd, pos_nl, max_data_size, check_done, cmd_name, time
         print_ts('Socket error occurred ({}): {}'.format(cmd_name, e))
         data = None
 
-    if (timeout > 0 and t >= timeout):
+    if timeout > 0 and t >= timeout:
         print_ts('Timeout occurred ({}).'.format(cmd_name))
         data = None
 

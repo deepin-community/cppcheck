@@ -19,26 +19,26 @@
 #ifndef helpersH
 #define helpersH
 
-#include "color.h"
-#include "errorlogger.h"
 #include "settings.h"
-#include "suppressions.h"
 #include "tokenize.h"
 #include "tokenlist.h"
 
-#include <cstdio>
-#include <fstream>
-#include <list>
+#include <cstddef>
 #include <sstream> // IWYU pragma: keep
 #include <string>
-#include <utility>
+#include <vector>
 
 class Token;
+class Preprocessor;
+class Suppressions;
+namespace simplecpp {
+    struct DUI;
+}
 
 class givenACodeSampleToTokenize {
 private:
     Tokenizer tokenizer;
-    static const Settings settings;
+    const Settings settings;
 
 public:
     explicit givenACodeSampleToTokenize(const char sample[], bool createOnly = false, bool cpp = true)
@@ -50,40 +50,98 @@ public:
             tokenizer.tokenize(iss, cpp ? "test.cpp" : "test.c");
     }
 
+    Token* tokens() {
+        return tokenizer.tokens();
+    }
+
     const Token* tokens() const {
         return tokenizer.tokens();
     }
 };
 
 
-class SimpleSuppressor : public ErrorLogger {
-public:
-    SimpleSuppressor(Settings &settings, ErrorLogger *next)
-        : settings(settings), next(next) {}
-    void reportOut(const std::string &outmsg, Color /*c*/ = Color::Reset) override {
-        next->reportOut(outmsg);
-    }
-    void reportErr(const ErrorMessage &msg) override {
-        if (!msg.callStack.empty() && !settings.nomsg.isSuppressed(msg.toSuppressionsErrorMessage()))
-            next->reportErr(msg);
-    }
-private:
-    Settings &settings;
-    ErrorLogger *next;
-};
-
 class ScopedFile {
 public:
-    ScopedFile(std::string name, const std::string &content) : mName(std::move(name)) {
-        std::ofstream of(mName);
-        of << content;
+    ScopedFile(std::string name, const std::string &content, std::string path = "");
+    ~ScopedFile();
+
+    const std::string& path() const
+    {
+        return mFullPath;
     }
 
-    ~ScopedFile() {
-        remove(mName.c_str());
+    const std::string& name() const {
+        return mName;
     }
+
+    ScopedFile(const ScopedFile&) = delete;
+    ScopedFile(ScopedFile&&) = delete;
+    ScopedFile& operator=(const ScopedFile&) = delete;
+    ScopedFile& operator=(ScopedFile&&) = delete;
+
 private:
-    std::string mName;
+    const std::string mName;
+    const std::string mPath;
+    const std::string mFullPath;
+};
+
+class PreprocessorHelper
+{
+public:
+    /**
+     * Get preprocessed code for a given configuration
+     *
+     * Note: for testing only.
+     *
+     * @param filedata file data including preprocessing 'if', 'define', etc
+     * @param cfg configuration to read out
+     * @param filename name of source file
+     * @param inlineSuppression the inline suppressions
+     */
+    static std::string getcode(Preprocessor &preprocessor, const std::string &filedata, const std::string &cfg, const std::string &filename, Suppressions *inlineSuppression = nullptr);
+
+    static void preprocess(const char code[], std::vector<std::string> &files, Tokenizer& tokenizer);
+    static void preprocess(Preprocessor &preprocessor, const char code[], std::vector<std::string> &files, Tokenizer& tokenizer);
+    static void preprocess(Preprocessor &preprocessor, const char code[], std::vector<std::string> &files, Tokenizer& tokenizer, const simplecpp::DUI& dui);
+};
+
+namespace cppcheck {
+    template<typename T>
+    std::size_t count_all_of(const std::string& str, T sub) {
+        std::size_t n = 0;
+        std::string::size_type pos = 0;
+        while ((pos = str.find(sub, pos)) != std::string::npos) {
+            ++pos;
+            ++n;
+        }
+        return n;
+    }
+}
+
+/* designated initialization helper
+    Usage:
+    struct S
+    {
+        int i;
+    };
+
+    const auto s = dinit(S,
+        $.i = 1
+    );
+ */
+#define dinit(T, ...) \
+    ([&] { T ${}; __VA_ARGS__; return $; }())
+
+// Default construct object to avoid bug in clang
+// error: default member initializer for 'y' needed within definition of enclosing class 'X' outside of member functions
+// see https://stackoverflow.com/questions/53408962
+struct make_default_obj
+{
+    template<class T>
+    operator T() const // NOLINT
+    {
+        return T{};
+    }
 };
 
 #endif // helpersH

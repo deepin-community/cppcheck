@@ -26,16 +26,27 @@
 #include "tokenize.h"
 #include "vfvalue.h"
 
+#include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <stdexcept>
 #include <utility>
 
 //---------------------------------------------------------------------------
 
 Check::Check(const std::string &aname)
-    : mTokenizer(nullptr), mSettings(nullptr), mErrorLogger(nullptr), mName(aname)
+    : mName(aname)
 {
-    auto it = std::find_if(instances().begin(), instances().end(), [&](const Check* i) {
+    {
+        const auto it = std::find_if(instances().begin(), instances().end(), [&](const Check *i) {
+            return i->name() == aname;
+        });
+        if (it != instances().end())
+            throw std::runtime_error("'" + aname + "' instance already exists");
+    }
+
+    // make sure the instances are sorted
+    const auto it = std::find_if(instances().begin(), instances().end(), [&](const Check* i) {
         return i->name() > aname;
     });
     if (it == instances().end())
@@ -44,28 +55,28 @@ Check::Check(const std::string &aname)
         instances().insert(it, this);
 }
 
-void Check::reportError(const ErrorMessage &errmsg)
+void Check::writeToErrorList(const ErrorMessage &errmsg)
 {
     std::cout << errmsg.toXML() << std::endl;
 }
 
 
-void Check::reportError(const std::list<const Token *> &callstack, Severity::SeverityType severity, const std::string &id, const std::string &msg, const CWE &cwe, Certainty certainty)
+void Check::reportError(const std::list<const Token *> &callstack, Severity severity, const std::string &id, const std::string &msg, const CWE &cwe, Certainty certainty)
 {
     const ErrorMessage errmsg(callstack, mTokenizer ? &mTokenizer->list : nullptr, severity, id, msg, cwe, certainty);
     if (mErrorLogger)
         mErrorLogger->reportErr(errmsg);
     else
-        reportError(errmsg);
+        writeToErrorList(errmsg);
 }
 
-void Check::reportError(const ErrorPath &errorPath, Severity::SeverityType severity, const char id[], const std::string &msg, const CWE &cwe, Certainty certainty)
+void Check::reportError(const ErrorPath &errorPath, Severity severity, const char id[], const std::string &msg, const CWE &cwe, Certainty certainty)
 {
     const ErrorMessage errmsg(errorPath, mTokenizer ? &mTokenizer->list : nullptr, severity, id, msg, cwe, certainty);
     if (mErrorLogger)
         mErrorLogger->reportErr(errmsg);
     else
-        reportError(errmsg);
+        writeToErrorList(errmsg);
 }
 
 bool Check::wrongData(const Token *tok, const char *str)
@@ -114,3 +125,9 @@ ErrorPath Check::getErrorPath(const Token* errtok, const ValueFlow::Value* value
     }
     return errorPath;
 }
+
+void Check::logChecker(const char id[])
+{
+    reportError(nullptr, Severity::internal, "logChecker", id);
+}
+

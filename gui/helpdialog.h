@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,10 +20,12 @@
 #define HELPDIALOG_H
 
 #include <QDialog>
+#include <QObject>
+#include <QString>
 #include <QTextBrowser>
+#include <QVariant>
 
 class QHelpEngine;
-class QObject;
 class QUrl;
 class QWidget;
 namespace Ui {
@@ -32,7 +34,7 @@ namespace Ui {
 
 class HelpBrowser : public QTextBrowser {
 public:
-    explicit HelpBrowser(QWidget* parent = nullptr) : QTextBrowser(parent), mHelpEngine(nullptr) {}
+    explicit HelpBrowser(QWidget* parent = nullptr) : QTextBrowser(parent) {}
     HelpBrowser(const HelpBrowser&) = delete;
     HelpBrowser(HelpBrowser&&) = delete;
     HelpBrowser& operator=(const HelpBrowser&) = delete;
@@ -40,7 +42,7 @@ public:
     void setHelpEngine(QHelpEngine *helpEngine);
     QVariant loadResource(int type, const QUrl& name) override;
 private:
-    QHelpEngine* mHelpEngine;
+    QHelpEngine* mHelpEngine{};
 };
 
 class HelpDialog : public QDialog {
